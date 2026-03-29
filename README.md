@@ -227,7 +227,7 @@ To browse the web:
 1. POST /navigate with {"url": "https://example.com"}
 2. GET /screenshot to see the page
 3. POST /live/click with {"x": 100, "y": 200} to click
-4. POST /type with {"text": "search query", "x": 300, "y": 150} to type
+4. POST /live/click with {"x": 300, "y": 150} to focus a field, then POST /type with {"text": "search query"} to type
 
 When you can't find an element or hit a captcha:
 1. POST /waitfor-highlight with {"message": "Please click the submit button"}
