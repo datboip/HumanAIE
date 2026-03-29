@@ -3,7 +3,7 @@
 **Human AI Eyes** (pronounced "Human Eye") — a shared browser for human-AI collaboration.
 
 <!-- badges -->
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 
