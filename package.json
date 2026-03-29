@@ -18,7 +18,14 @@
     "headless",
     "playwright",
     "streaming",
-    "human-in-the-loop"
+    "human-in-the-loop",
+    "computer-use",
+    "mcp-server",
+    "claude-code-plugin",
+    "browser-automation",
+    "captcha",
+    "shared-browser",
+    "highlight-to-teach"
   ],
   "license": "MIT"
 }
