@@ -1,7 +1,7 @@
 ---
 name: HumanAIE Browser Control
 description: Use when browsing the web, filling forms, clicking buttons, solving captchas, or any task requiring a visible browser the user can watch and assist with. Activates when user mentions browsing, websites, signing up, captcha, login, or web research.
-version: 1.0.0
+version: 1.0.1
 ---
 
 # HumanAIE — Shared Browser for Human-AI Collaboration
@@ -22,6 +22,16 @@ curl -s -X POST http://localhost:3333/navigate -H 'Content-Type: application/jso
 curl -s -X POST http://localhost:3333/live/click -H 'Content-Type: application/json' -d '{"x":X,"y":Y}'
 ```
 
+### Fill form field (prefer this over click+type)
+```bash
+curl -s -X POST http://localhost:3333/fill -H 'Content-Type: application/json' -d '{"selector":"#email","value":"user@example.com"}'
+```
+
+### Wait for element
+```bash
+curl -s -X POST http://localhost:3333/wait -H 'Content-Type: application/json' -d '{"selector":".loaded"}'
+```
+
 ### Type text
 ```bash
 curl -s -X POST http://localhost:3333/live/type -H 'Content-Type: application/json' -d '{"text":"hello"}'
@@ -30,6 +40,16 @@ curl -s -X POST http://localhost:3333/live/type -H 'Content-Type: application/js
 ### Press key
 ```bash
 curl -s -X POST http://localhost:3333/live/key -H 'Content-Type: application/json' -d '{"key":"Enter"}'
+```
+
+### Hover (confirms target before clicking)
+```bash
+curl -s -X POST http://localhost:3333/hover -H 'Content-Type: application/json' -d '{"x":X,"y":Y}'
+```
+
+### Scroll
+```bash
+curl -s -X POST http://localhost:3333/scroll -H 'Content-Type: application/json' -d '{"deltaY":500}'
 ```
 
 ### Back / Forward
@@ -43,9 +63,26 @@ curl -s -X POST http://localhost:3333/forward
 curl -s http://localhost:3333/screenshot
 ```
 
+### Quick frame (raw JPEG, faster than screenshot)
+```bash
+curl -s http://localhost:3333/frame.jpg -o /tmp/frame.jpg
+```
+
 ### Check status
 ```bash
 curl -s http://localhost:3333/live/status
+```
+
+### Tabs
+```bash
+# List tabs
+curl -s http://localhost:3333/tabs
+# Open new tab
+curl -s -X POST http://localhost:3333/tabs/new -H 'Content-Type: application/json' -d '{"url":"URL"}'
+# Switch tab
+curl -s -X POST http://localhost:3333/tabs/switch -H 'Content-Type: application/json' -d '{"id":2}'
+# Close tab
+curl -s -X DELETE http://localhost:3333/tabs/ID
 ```
 
 ## Human-in-the-Loop
@@ -70,6 +107,15 @@ curl -s -X POST http://localhost:3333/waitfor-highlight/done
 ```bash
 curl -s "http://localhost:3333/highlight-history?url=example.com"
 ```
+
+## Best Practices
+
+1. **Use `/fill` instead of click+type for form fields** — target by CSS selector, way more reliable than guessing pixel coordinates
+2. **Use `/wait` instead of sleep loops** — wait for a real DOM element to appear instead of blind delays
+3. **Check `/highlight-history?url=DOMAIN` before calling `/waitfor-highlight`** — don't ask the human for something you already learned
+4. **Use `/frame.jpg` for rapid polling, `/screenshot` for one-off captures** — frame.jpg is raw JPEG with less overhead
+5. **Use `/hover` before clicking unfamiliar elements** — confirms you're targeting the right thing and triggers tooltips
+6. **Use tabs for parallel research** — open multiple pages, scrape them, switch between tabs instead of navigating back and forth
 
 ## Rules
 
