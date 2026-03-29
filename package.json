@@ -1,0 +1,24 @@
+{
+  "name": "humanaie",
+  "version": "1.0.0",
+  "description": "Shared browser for human-AI collaboration. Real-time streaming, click/type/scroll, highlight-to-teach, waitfor handoff.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "playwright": "^1.58.0"
+  },
+  "keywords": [
+    "browser",
+    "remote-desktop",
+    "ai-agent",
+    "headless",
+    "playwright",
+    "streaming",
+    "human-in-the-loop"
+  ],
+  "license": "MIT"
+}

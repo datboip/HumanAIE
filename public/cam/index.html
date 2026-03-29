@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HumanAIE — Human AI Eyes</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23c0c0c0'/><circle cx='35' cy='45' r='12' fill='%23000'/><circle cx='65' cy='45' r='12' fill='%23000'/><circle cx='35' cy='43' r='5' fill='%23fff'/><circle cx='65' cy='43' r='5' fill='%23fff'/><rect x='20' y='70' width='60' height='8' rx='4' fill='%23f0c040'/></svg>">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #c0c0c0;
+    --highlight: #ffffff;
+    --shadow: #808080;
+    --dark-shadow: #404040;
+    --text: #000000;
+    --url-bg: #ffffff;
+    --tab-active: #c0c0c0;
+    --tab-inactive: #a0a0a0;
+    --accent-yellow: #f0c040;
+    --status-green: #00c000;
+    --status-red: #c00000;
+    --takeover-red: #cc2200;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+    font-size: 13px;
+  }
+
+  /* ---- App shell ---- */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* ---- Title bar ---- */
+  /* titlebar removed */
+
+  /* ---- Navigation bar ---- */
+  #navbar {
+    display: flex;
+    align-items: center;
+    padding: 4px 6px;
+    gap: 6px;
+    background: var(--bg);
+    border-bottom: 2px groove var(--shadow);
+    min-height: 56px;
+    flex-shrink: 0;
+  }
+  .nav-btn {
+    min-width: 58px;
+    height: 48px;
+    background: var(--bg);
+    border-top: 2px solid var(--highlight);
+    border-left: 2px solid var(--highlight);
+    border-right: 2px solid var(--shadow);
+    border-bottom: 2px solid var(--shadow);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px 10px;
+    font-family: inherit;
+    color: var(--text);
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+  .nav-btn:active {
+    border-top: 2px solid var(--shadow);
+    border-left: 2px solid var(--shadow);
+    border-right: 2px solid var(--highlight);
+    border-bottom: 2px solid var(--highlight);
+  }
+  .nav-btn .btn-label {
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.3px;
+    line-height: 1;
+  }
+  .nav-btn .btn-icon {
+    font-size: 20px;
+    line-height: 1;
+    display: block;
+  }
+  /* active state handled above with explicit border colors */
+  .nav-btn:hover {
+    background: #d4d4d4;
+  }
+  #navbar .loc-label {
+    font-size: 12px;
+    font-weight: bold;
+    margin: 0 4px 0 6px;
+    white-space: nowrap;
+  }
+  #url-bar {
+    flex: 1;
+    height: 24px;
+    border: 2px inset var(--shadow);
+    background: var(--url-bg);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 0 4px;
+    outline: none;
+  }
+  #go-btn {
+    min-width: 58px;
+    height: 48px;
+    font-weight: bold;
+    font-size: 14px;
+  }
+
+  /* ---- Tab bar ---- */
+  #tabbar {
+    display: flex;
+    align-items: flex-end;
+    padding: 2px 4px;
+    background: var(--bg);
+    border-bottom: 2px groove var(--shadow);
+    min-height: 30px;
+    overflow-x: auto;
+    gap: 1px;
+    scrollbar-width: none;
+  }
+  #tabbar::-webkit-scrollbar { display: none; }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: var(--tab-inactive);
+    border: 2px outset var(--bg);
+    border-bottom: none;
+    cursor: pointer;
+    font-size: 12px;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+    margin-bottom: -2px;
+    border-radius: 3px 3px 0 0;
+  }
+  .tab.active {
+    background: var(--tab-active);
+    border-bottom: 2px solid var(--tab-active);
+    font-weight: bold;
+  }
+  .tab .tab-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab .tab-close {
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .tab .tab-close:hover {
+    color: red;
+    font-weight: bold;
+  }
+  #new-tab-btn {
+    border: 2px outset var(--bg);
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 8px;
+    margin-bottom: -2px;
+    border-radius: 3px 3px 0 0;
+    border-bottom: none;
+  }
+  #new-tab-btn:active { border-style: inset; }
+
+  /* ---- Waitfor banner ---- */
+  #waitfor-banner {
+    display: none;
+    background: var(--accent-yellow);
+    color: #000;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-weight: bold;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 2px solid #c8a020;
+  }
+  #waitfor-banner.visible {
+    display: flex;
+  }
+  #waitfor-banner .banner-msg {
+    flex: 1;
+  }
+  #waitfor-banner input {
+    flex: 0 1 260px;
+    height: 22px;
+    border: 2px inset var(--shadow);
+    font-size: 12px;
+    padding: 0 4px;
+  }
+  #waitfor-banner button {
+    height: 22px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  /* ---- Viewport area ---- */
+  #viewport-wrapper {
+    flex: 1 1 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    border: 2px inset var(--shadow);
+    margin: 0;
+    background: #2a2a3a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #viewport {
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: crosshair;
+    image-rendering: auto;
+  }
+  #viewport.visible { display: block; }
+
+  /* ---- Splash screen ---- */
+  #splash {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #c0c0c0;
+    user-select: none;
+  }
+  #splash.hidden { display: none; }
+  #splash h1 {
+    font-family: 'Courier New', monospace;
+    font-size: 48px;
+    font-weight: bold;
+    color: var(--accent-yellow);
+    text-shadow: 2px 2px 0 #806020, 0 0 20px rgba(240,192,64,0.3);
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+  }
+  #splash .tagline {
+    font-size: 18px;
+    color: #a0a0b0;
+    margin-bottom: 4px;
+    letter-spacing: 2px;
+  }
+  #splash .version {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #808090;
+    margin-bottom: 24px;
+  }
+  #splash .hint {
+    font-size: 13px;
+    color: #707080;
+    border: 1px solid #505060;
+    padding: 8px 16px;
+    background: rgba(255,255,255,0.03);
+  }
+
+  /* ---- Highlight dots ---- */
+  .highlight-dot {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ff3333;
+    box-shadow: 0 0 8px rgba(255,50,50,0.6), 0 0 16px rgba(255,50,50,0.3);
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    z-index: 20;
+    transition: opacity 0.2s;
+  }
+  .highlight-dot:hover {
+    opacity: 0.7;
+  }
+  .highlight-dot::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 18px;
+    top: -2px;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--accent-yellow);
+    text-shadow: 1px 1px 0 #000;
+    pointer-events: none;
+    font-family: 'Segoe UI', Tahoma, Geneva, sans-serif;
+  }
+  .highlight-dot .dot-remove {
+    display: none;
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 14px;
+    height: 14px;
+    background: #c00;
+    color: #fff;
+    font-size: 10px;
+    line-height: 14px;
+    text-align: center;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .highlight-dot:hover .dot-remove {
+    display: block;
+  }
+
+  /* ---- Floating toolbar ---- */
+  #floating-toolbar {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: var(--bg);
+    border: 2px outset var(--bg);
+    z-index: 30;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.4);
+  }
+  .ft-btn {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 12px;
+    background: var(--bg);
+    border: 2px outset var(--bg);
+    cursor: pointer;
+    font-family: inherit;
+    color: var(--text);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .ft-btn:active { border-style: inset; }
+  .ft-btn.toggled {
+    border-style: inset;
+    background: #b0b0b0;
+  }
+  #takeover-btn {
+    background: var(--bg);
+    color: var(--takeover-red);
+    font-weight: bold;
+  }
+  #takeover-btn.human {
+    background: #0066cc;
+    color: #fff;
+  }
+
+  /* ---- Control bar ---- */
+  #controlbar {
+    display: flex;
+    align-items: center;
+    padding: 4px 6px;
+    gap: 4px;
+    background: var(--bg);
+    border-top: 2px groove var(--shadow);
+    border-bottom: 2px groove var(--shadow);
+    flex-shrink: 0;
+    overflow: visible;
+    position: relative;
+    z-index: 500;
+  }
+  .cb-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .cb-label {
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+    margin-right: 2px;
+  }
+  .cb-sep {
+    width: 1px;
+    height: 20px;
+    background: var(--shadow);
+    margin: 0 4px;
+    flex-shrink: 0;
+  }
+  .popup-anchor {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .popup-panel {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    background: var(--bg);
+    border: 2px outset var(--bg);
+    padding: 8px;
+    min-width: 180px;
+    z-index: 9999;
+    box-shadow: 3px -3px 8px rgba(0,0,0,0.4);
+  }
+  .popup-panel.open { display: block; }
+  .popup-title {
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--shadow);
+  }
+  .popup-row {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+  .popup-hint {
+    font-size: 10px;
+    color: var(--shadow);
+    margin-top: 4px;
+    font-style: italic;
+  }
+  .cb-mode.active-mode {
+    background: #d0d0d0 !important;
+    border-style: inset !important;
+  }
+
+  /* ---- Click ripple ---- */
+  .click-ripple {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ff0000;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 25;
+    animation: ripple-out 0.6s ease-out forwards;
+  }
+  @keyframes ripple-out {
+    0% { transform: scale(0.5); opacity: 1; }
+    100% { transform: scale(3); opacity: 0; }
+  }
+  .click-dot {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: #ff0000;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 25;
+    animation: dot-fade 1s ease-out forwards;
+  }
+  @keyframes dot-fade {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* ---- Status bar ---- */
+  #statusbar {
+    display: flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: var(--bg);
+    border-top: 2px groove var(--shadow);
+    min-height: 22px;
+    font-size: 12px;
+    gap: 8px;
+  }
+  #statusbar .sb-left {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+  }
+  #status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--status-red);
+    border: 1px solid var(--dark-shadow);
+  }
+  #status-dot.connected {
+    background: var(--status-green);
+  }
+  #statusbar .sb-center {
+    flex: 2;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #404040;
+  }
+  #statusbar .sb-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+  }
+  #control-indicator {
+    font-weight: bold;
+    font-size: 11px;
+    padding: 1px 6px;
+    border: 1px solid var(--shadow);
+  }
+  #control-indicator.ai { background: #d0d0ff; color: #000080; }
+  #control-indicator.human { background: #ffd0d0; color: #800000; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Title bar removed — branding moved to status bar -->
+
+  <!-- Navigation bar -->
+  <div id="navbar">
+    <button class="nav-btn" id="btn-back" title="Back" onclick="goBack()"><span class="btn-icon">◀</span><span class="btn-label">Back</span></button>
+    <button class="nav-btn" id="btn-forward" title="Forward" onclick="goForward()"><span class="btn-icon">▶</span><span class="btn-label">Forward</span></button>
+    <button class="nav-btn" id="btn-reload" title="Reload" onclick="refreshPage()"><span class="btn-icon">🔄</span><span class="btn-label">Reload</span></button>
+    <button class="nav-btn" id="btn-home" title="Home" onclick="goHome()"><span class="btn-icon">🏠</span><span class="btn-label">Home</span></button>
+    <button class="nav-btn" id="btn-stop" title="Stop" onclick="stopStream()"><span class="btn-icon">🛑</span><span class="btn-label">Stop</span></button>
+    <span class="loc-label">Location:</span>
+    <input type="text" id="url-bar" placeholder="Enter URL..." spellcheck="false" autocomplete="off">
+    <button class="nav-btn" id="go-btn" onclick="navigate()">Go</button>
+  </div>
+
+  <!-- Tab bar -->
+  <div id="tabbar">
+    <button id="new-tab-btn" onclick="newTab()" title="New Tab">+</button>
+  </div>
+
+  <!-- Waitfor banner -->
+  <div id="waitfor-banner">
+    <span class="banner-msg" id="waitfor-msg">AI needs your help</span>
+    <input type="text" id="waitfor-input" placeholder="Correction / note...">
+    <button class="nav-btn" onclick="sendWaitforCorrection()">Send</button>
+    <button class="nav-btn" onclick="dismissWaitfor()">Dismiss</button>
+  </div>
+
+  <!-- Viewport -->
+  <div id="viewport-wrapper">
+    <div id="splash">
+      <h1>HumanAIE</h1>
+      <div class="tagline">Human AI Eyes</div>
+      <div class="version ver-tag">v1.0.0</div>
+
+      <div style="display:flex;gap:16px;margin-top:24px;flex-wrap:wrap;justify-content:center;max-width:600px">
+        <!-- Status panel -->
+        <div style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:180px;text-align:left">
+          <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px">Status</div>
+          <div style="font-size:12px;margin-bottom:4px" id="splash-connection">⚫ Checking...</div>
+          <div style="font-size:12px;margin-bottom:4px" id="splash-tabs">Tabs: —</div>
+          <div style="font-size:12px" id="splash-res">Res: —</div>
+        </div>
+
+        <!-- Quick launch (populated from history + bookmarks) -->
+        <div style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:200px;text-align:left">
+          <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+            Quick Launch
+            <span onclick="clearHistory()" style="font-size:9px;color:#999;cursor:pointer;font-weight:normal" title="Clear history">clear</span>
+          </div>
+          <div id="splash-quicklaunch" style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#888">Loading...</div>
+          <div style="margin-top:8px;display:flex;gap:3px">
+            <input id="bookmark-input" type="text" placeholder="Add bookmark URL..." style="flex:1;height:22px;border:2px inset var(--shadow);background:var(--url-bg);font-size:11px;padding:0 4px;color:#000;font-family:'Courier New',monospace">
+            <button class="nav-btn" onclick="addBookmark()" style="height:22px;font-size:10px;padding:0 6px;min-width:30px">+</button>
+          </div>
+        </div>
+
+        <!-- Recent history -->
+        <div style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:180px;text-align:left">
+          <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+            Recent
+            <span onclick="clearHistory()" style="font-size:9px;color:#999;cursor:pointer;font-weight:normal" title="Clear history">clear</span>
+          </div>
+          <div id="splash-history" style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#888;max-height:120px;overflow-y:auto">Loading...</div>
+        </div>
+
+      </div>
+
+      <div class="hint" style="margin-top:16px">Enter a URL above or click Quick Launch</div>
+    </div>
+    <img id="viewport" alt="Browser viewport">
+
+  </div>
+
+  <!-- Control bar -->
+  <div id="controlbar">
+    <!-- Type input (always visible) -->
+    <div class="cb-group" style="flex:1;min-width:0">
+      <input type="text" id="type-input" placeholder="Type here, press Enter to send..." style="flex:1;height:28px;border:2px inset var(--shadow);background:var(--url-bg);font-family:'Courier New',monospace;font-size:12px;padding:0 8px;min-width:180px">
+    </div>
+    <div class="cb-sep"></div>
+
+    <!-- Mode buttons (always visible) -->
+    <button class="nav-btn cb-mode active-mode" id="mode-click" onclick="setMode('click')" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">🖱 Click</button>
+    <button class="nav-btn cb-mode" id="mode-drag" onclick="setMode('drag')" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">✋ Drag</button>
+    <button class="nav-btn cb-mode" id="mode-highlight" onclick="toggleHighlightMode()" style="min-width:60px;height:28px;font-size:11px;padding:0 8px" title="Mark something for the AI to see">👆 Point</button>
+    <div class="cb-sep"></div>
+
+    <!-- Popup trigger buttons -->
+    <div class="popup-anchor">
+      <button class="nav-btn" onclick="togglePopup('controls-popup', event)" style="min-width:65px;height:28px;font-size:11px;padding:0 8px">⌨ Controls</button>
+      <div id="controls-popup" class="popup-panel" style="min-width:220px">
+        <div class="popup-title">Keyboard</div>
+        <div class="popup-row">
+          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Enter')">Enter</button>
+          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Tab')">Tab</button>
+          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Escape')">Esc</button>
+          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Backspace')">Del</button>
+          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Space')">Space</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
+          <div></div>
+          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowUp')">▲</button>
+          <div></div>
+          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowLeft')">◀</button>
+          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowDown')">▼</button>
+          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowRight')">▶</button>
+        </div>
+        <div class="popup-title" style="margin-top:6px">Scroll</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+          <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('up', 300)">⬆ Up</button>
+          <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('up', 99999)">⏫ Top</button>
+          <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('down', 300)">⬇ Down</button>
+          <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('down', 99999)">⏬ Btm</button>
+        </div>
+        <div class="popup-hint">✋ Drag mode also scrolls</div>
+      </div>
+    </div>
+
+    <div class="popup-anchor">
+      <button class="nav-btn" onclick="togglePopup('settings-popup', event)" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">⚙ Settings</button>
+      <div id="settings-popup" class="popup-panel" style="right:0;left:auto;min-width:200px">
+        <div class="popup-title">Settings</div>
+        <div class="popup-row">
+          <span class="cb-label" style="min-width:40px">Res:</span>
+          <select id="viewport-size-ctrl" onchange="resizeViewportFromCtrl()" style="flex:1;height:26px;border:2px inset var(--shadow);background:var(--url-bg);font-size:11px;font-family:inherit;cursor:pointer">
+            <option value="1280x720">1280×720</option>
+            <option value="1280x900">1280×900</option>
+            <option value="1280x1024" selected>1280×1024</option>
+            <option value="1440x900">1440×900</option>
+            <option value="1920x1080">1920×1080</option>
+          </select>
+        </div>
+        <div class="popup-row">
+          <span class="cb-label" style="min-width:40px">FPS:</span>
+          <select id="fps-select" onchange="changeFps()" style="flex:1;height:26px;border:2px inset var(--shadow);background:var(--url-bg);font-size:11px;font-family:inherit;cursor:pointer">
+            <option value="500">2 fps (low bandwidth)</option>
+            <option value="200">5 fps</option>
+            <option value="100" selected>10 fps (recommended)</option>
+            <option value="66">15 fps</option>
+            <option value="33">30 fps (high bandwidth)</option>
+          </select>
+        </div>
+        <div class="popup-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="chime-toggle" checked onchange="toggleChime()" style="cursor:pointer"> Notification chime
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="cb-sep"></div>
+    <button class="nav-btn" id="record-btn" onclick="toggleRecording()" style="width:80px;height:28px;font-size:11px;padding:0 8px;text-align:center">⚫ Record</button>
+    <button class="nav-btn" id="takeover-btn" onclick="toggleTakeover()" style="width:100px;height:28px;font-size:11px;padding:0 8px;font-weight:bold;text-align:center">🔴 TAKEOVER</button>
+  </div>
+
+  <!-- Status bar -->
+  <div id="statusbar">
+    <div class="sb-left" style="display:flex;align-items:center;gap:6px">
+      <span style="font-weight:bold;font-size:11px">HumanAIE</span>
+      <div id="status-dot" style="width:8px;height:8px;border-radius:50%;background:#c00;flex-shrink:0"></div>
+      <span id="status-text" style="font-size:11px;flex:1">Loading...</span>
+    </div>
+    <div class="sb-right" style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span id="fps-display" style="font-family:'Courier New',monospace;font-size:10px">— fps</span>
+      <span id="cursor-coords" style="font-family:'Courier New',monospace;font-size:10px">x:— y:—</span>
+      <span id="control-indicator" style="font-size:10px;font-weight:bold;padding:2px 8px;border-radius:3px;background:#006600;color:#fff;min-width:70px;text-align:center">AI</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ---- State ----
+  var state = {
+    currentUrl: '',
+    connected: false,
+    highlightMode: false,
+    humanControl: false,
+    paused: false,
+    streaming: false,
+    tabs: [],
+    activeTabId: null,
+    highlights: [],
+    waitforActive: false,
+    waitforMessage: '',
+    pollingMode: 'none',
+    pollingTimer: null,
+    frameCount: 0,
+    fps: 0,
+    fpsTimer: null,
+    mjpegTimeout: null,
+    splashVisible: true,
+    viewportWidth: 1280,
+    viewportHeight: 1024,
+    pollInterval: 100,
+    interactionMode: 'click',
+    waitforNotified: false
+  };
+
+  // ---- DOM refs ----
+  var $urlBar = document.getElementById('url-bar');
+  var $viewport = document.getElementById('viewport');
+  var $splash = document.getElementById('splash');
+  var $statusDot = document.getElementById('status-dot');
+  var $statusText = document.getElementById('status-text');
+  var $fpsDisplay = document.getElementById('fps-display');
+  var $controlIndicator = document.getElementById('control-indicator');
+  var $tabbar = document.getElementById('tabbar');
+  var $newTabBtn = document.getElementById('new-tab-btn');
+  var $waitforBanner = document.getElementById('waitfor-banner');
+  var $waitforMsg = document.getElementById('waitfor-msg');
+  var $waitforInput = document.getElementById('waitfor-input');
+  var $highlightToggle = document.getElementById('mode-highlight');
+  var $takeoverBtn = document.getElementById('takeover-btn');
+  var $viewportWrapper = document.getElementById('viewport-wrapper');
+  var $statusbar = document.getElementById('statusbar');
+
+  // ---- API helpers ----
+  function apiPost(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }).then(function(r) { return r.json().catch(function() { return {}; }); })
+      .catch(function(e) { console.error('API error:', path, e); return {}; });
+  }
+
+  function apiGet(path) {
+    return fetch(path)
+      .then(function(r) { return r.json().catch(function() { return {}; }); })
+      .catch(function(e) { console.error('API error:', path, e); return {}; });
+  }
+
+  // ---- Splash ----
+  function showSplash() {
+    state.splashVisible = true;
+    $splash.classList.remove('hidden');
+    $viewport.classList.remove('visible');
+    stopFramePolling();
+  }
+
+  function hideSplash() {
+    state.splashVisible = false;
+    $splash.classList.add('hidden');
+    // Don't show viewport yet — wait for first frame to load
+  }
+
+  function showViewport() {
+    $viewport.classList.add('visible');
+  }
+
+  // ---- Navigation ----
+  window.navigate = function() {
+    var url = $urlBar.value.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+      $urlBar.value = url;
+    }
+    state.currentUrl = url;
+    $statusText.textContent = 'Document: Loading...';
+    hideSplash();
+    recordAction('navigate', { url: url });
+    apiPost('/navigate', { url: url }).then(function(d) {
+      $statusText.textContent = 'Document: Done';
+      if (d && d.url) {
+        $urlBar.value = d.url;
+        state.currentUrl = d.url;
+      }
+      startFrameStream();
+      // Refresh tabs after a delay so the URL updates
+      setTimeout(loadTabs, 500);
+    });
+  };
+
+  window.goBack = function() {
+    apiPost('/back').then(function() {
+      $statusText.textContent = 'Document: Done';
+    });
+  };
+
+  window.goForward = function() {
+    apiPost('/forward').then(function() {
+      $statusText.textContent = 'Document: Done';
+    });
+  };
+
+  window.refreshPage = function() {
+    if (state.currentUrl) {
+      $statusText.textContent = 'Document: Loading...';
+      apiPost('/navigate', { url: state.currentUrl }).then(function() {
+        $statusText.textContent = 'Document: Done';
+      });
+    }
+  };
+
+  window.goHome = function() {
+    state.currentUrl = '';
+    $urlBar.value = '';
+    $statusText.textContent = 'Document: Done';
+    showSplash();
+  };
+
+  window.stopStream = function() {
+    stopFramePolling();
+    $statusText.textContent = 'Transfer interrupted';
+  };
+
+  $urlBar.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') navigate();
+  });
+
+  // ---- Frame streaming ----
+  function startFrameStream() {
+    stopFramePolling();
+    state.streaming = true;
+
+    // Try MJPEG first
+    state.pollingMode = 'mjpeg';
+    $viewport.src = '/stream';
+
+    var settled = false;
+
+    function onMjpegLoad() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      showViewport();
+      startFpsCounter();
+    }
+
+    function onMjpegError() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      startPollingMode();
+    }
+
+    $viewport.addEventListener('load', onMjpegLoad);
+    $viewport.addEventListener('error', onMjpegError);
+
+    // Fallback: if MJPEG doesn't produce a frame within 3s, switch to polling
+    state.mjpegTimeout = setTimeout(function() {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        startPollingMode();
+      }
+    }, 3000);
+
+    function cleanup() {
+      clearTimeout(state.mjpegTimeout);
+      state.mjpegTimeout = null;
+      $viewport.removeEventListener('load', onMjpegLoad);
+      $viewport.removeEventListener('error', onMjpegError);
+    }
+  }
+
+  function startPollingMode() {
+    if (state.splashVisible) return; // don't poll while splash is showing
+    state.pollingMode = 'polling';
+    state.frameCount = 0;
+    pollFrame();
+    state.pollingTimer = setInterval(pollFrame, state.pollInterval || 100);
+    startFpsCounter();
+  }
+
+  function pollFrame() {
+    if (state.paused) return;
+    var img = new Image();
+    img.onload = function() {
+      $viewport.src = img.src;
+      if (!state.splashVisible) showViewport();
+      state.frameCount++;
+    };
+    img.src = '/frame.jpg?t=' + Date.now();
+  }
+
+  function stopFramePolling() {
+    if (state.pollingTimer) {
+      clearInterval(state.pollingTimer);
+      state.pollingTimer = null;
+    }
+    if (state.mjpegTimeout) {
+      clearTimeout(state.mjpegTimeout);
+      state.mjpegTimeout = null;
+    }
+    state.streaming = false;
+    state.pollingMode = 'none';
+    stopFpsCounter();
+  }
+
+  function startFpsCounter() {
+    state.frameCount = 0;
+    state.fps = 0;
+    if (state.fpsTimer) clearInterval(state.fpsTimer);
+
+    if (state.pollingMode === 'mjpeg') {
+      if ($fpsDisplay) $fpsDisplay.textContent = 'MJPEG';
+      return;
+    }
+
+    state.fpsTimer = setInterval(function() {
+      state.fps = state.frameCount;
+      state.frameCount = 0;
+      var fpsText = state.fps + ' fps';
+      if ($fpsDisplay) $fpsDisplay.textContent = fpsText;
+    }, 1000);
+  }
+
+  function stopFpsCounter() {
+    if (state.fpsTimer) {
+      clearInterval(state.fpsTimer);
+      state.fpsTimer = null;
+    }
+    if ($fpsDisplay) $fpsDisplay.textContent = '0 fps';
+  }
+
+  // ---- Tab management ----
+  function loadTabs() {
+    apiGet('/tabs').then(function(data) {
+      if (!data || !Array.isArray(data.tabs)) return;
+      state.tabs = data.tabs;
+      state.activeTabId = data.activeTabId || (data.tabs.length > 0 ? data.tabs[0].id : null);
+      renderTabs();
+    });
+  }
+
+  function renderTabs() {
+    // Remove existing tab elements (not the + button)
+    var existing = $tabbar.querySelectorAll('.tab');
+    for (var i = 0; i < existing.length; i++) {
+      existing[i].remove();
+    }
+
+    for (var j = 0; j < state.tabs.length; j++) {
+      (function(t) {
+        var tabEl = document.createElement('div');
+        tabEl.className = 'tab' + (t.id === state.activeTabId ? ' active' : '');
+        tabEl.setAttribute('data-tab-id', t.id);
+
+        var titleSpan = document.createElement('span');
+        titleSpan.className = 'tab-title';
+        var tabTitle = 'New Tab';
+        if (t.url && t.url !== 'about:blank') {
+          try { tabTitle = new URL(t.url).hostname; } catch(e) { tabTitle = t.url.substring(0, 20); }
+        }
+        titleSpan.textContent = t.title || tabTitle;
+        tabEl.appendChild(titleSpan);
+
+        var closeSpan = document.createElement('span');
+        closeSpan.className = 'tab-close';
+        closeSpan.textContent = '\u00d7';
+        closeSpan.addEventListener('click', function(e) {
+          e.stopPropagation();
+          closeTab(t.id);
+        });
+        tabEl.appendChild(closeSpan);
+
+        tabEl.addEventListener('click', function() {
+          if (state.splashVisible) {
+            hideSplash();
+            showViewport();
+            startFrameStream();
+          }
+          switchTab(t.id);
+        });
+
+        $tabbar.insertBefore(tabEl, $newTabBtn);
+      })(state.tabs[j]);
+    }
+  }
+
+  window.switchTab = function(id) {
+    apiPost('/tabs/switch', { id: id }).then(function(d) {
+      if (d && d.url) {
+        $urlBar.value = d.url;
+        state.currentUrl = d.url;
+
+      }
+      loadTabs();
+    });
+  };
+
+  window.closeTab = function(id) {
+    fetch('/tabs/' + id, { method: 'DELETE' })
+      .then(function(r) { return r.json(); })
+      .then(function() { loadTabs(); })
+      .catch(function() {});
+  };
+
+  window.newTab = function() {
+    apiPost('/tabs/new', { url: 'about:blank' }).then(function(d) {
+      if (d && d.id) {
+        state.activeTabId = d.id;
+        $urlBar.value = '';
+        state.currentUrl = '';
+      }
+      loadTabs();
+    });
+  };
+
+  // ---- Coordinate helper (letterbox-aware) ----
+  function screenToVirtual(e) {
+    var rect = $viewport.getBoundingClientRect();
+    var vw = state.viewportWidth || 1280;
+    var vh = state.viewportHeight || 1024;
+    var imgAspect = vw / vh;
+    var boxAspect = rect.width / rect.height;
+    var renderW, renderH, offsetX, offsetY;
+    if (imgAspect > boxAspect) {
+      renderW = rect.width;
+      renderH = rect.width / imgAspect;
+      offsetX = 0;
+      offsetY = (rect.height - renderH) / 2;
+    } else {
+      renderH = rect.height;
+      renderW = rect.height * imgAspect;
+      offsetX = (rect.width - renderW) / 2;
+      offsetY = 0;
+    }
+    var relX = e.clientX - rect.left - offsetX;
+    var relY = e.clientY - rect.top - offsetY;
+    if (relX < 0 || relX > renderW || relY < 0 || relY > renderH) return null;
+    var x = Math.round((relX / renderW) * vw);
+    var y = Math.round((relY / renderH) * vh);
+    return { x: Math.max(0, Math.min(vw, x)), y: Math.max(0, Math.min(vh, y)), screenX: relX, screenY: relY };
+  }
+
+  // ---- Click handling on viewport ----
+  $viewport.addEventListener('click', function(e) {
+    if (state.interactionMode === 'drag') return;
+    if (state.splashVisible) return;
+
+    var coords = screenToVirtual(e);
+    if (!coords) return;
+    var rect = $viewport.getBoundingClientRect();
+    var x = coords.x;
+    var y = coords.y;
+
+    if (state.highlightMode) {
+      // If note input has text, use that. Otherwise use AI's question. Otherwise generic.
+      var label = state.waitforActive ? state.waitforMessage : 'Point ' + (state.highlights.length + 1);
+
+      addHighlightDot(coords.screenX, coords.screenY, x, y, label);
+      apiPost('/highlight', { x: x, y: y, label: label });
+
+      // If answering a waitfor, one click is enough — turn off highlight mode
+      if (state.waitforActive) {
+        state.highlightMode = false;
+        var allModes = document.querySelectorAll('.cb-mode');
+        for (var m = 0; m < allModes.length; m++) allModes[m].classList.remove('active-mode');
+        document.getElementById('mode-click').classList.add('active-mode');
+        $viewport.style.cursor = 'crosshair';
+        $waitforBanner.classList.remove('visible');
+      }
+    } else {
+      // Show click ripple
+      var ripple = document.createElement('div');
+      ripple.className = 'click-ripple';
+      var wRect = $viewportWrapper.getBoundingClientRect();
+      var vpRect = $viewport.getBoundingClientRect();
+      ripple.style.left = (vpRect.left - wRect.left + (e.clientX - rect.left) - 10) + 'px';
+      ripple.style.top = (vpRect.top - wRect.top + (e.clientY - rect.top) - 10) + 'px';
+      $viewportWrapper.appendChild(ripple);
+      setTimeout(function() { ripple.remove(); }, 600);
+
+      var dot = document.createElement('div');
+      dot.className = 'click-dot';
+      dot.style.left = (vpRect.left - wRect.left + (e.clientX - rect.left) - 3) + 'px';
+      dot.style.top = (vpRect.top - wRect.top + (e.clientY - rect.top) - 3) + 'px';
+      $viewportWrapper.appendChild(dot);
+      setTimeout(function() { dot.remove(); }, 1000);
+
+      recordAction('click', { x: x, y: y });
+      apiPost('/live/click', { x: x, y: y });
+    }
+  });
+
+  // ---- Cursor coordinates ----
+  var $cursorCoords = document.getElementById('cursor-coords');
+  $viewport.addEventListener('mousemove', function(e) {
+    var coords = screenToVirtual(e);
+    if (!coords) return;
+    $cursorCoords.textContent = 'x:' + coords.x + ' y:' + coords.y;
+  });
+  $viewport.addEventListener('mouseleave', function() {
+    $cursorCoords.textContent = 'x:\u2014 y:\u2014';
+  });
+
+  // ---- Highlight system ----
+  function addHighlightDot(screenX, screenY, virtX, virtY, label) {
+    var dot = document.createElement('div');
+    dot.className = 'highlight-dot';
+    dot.setAttribute('data-label', label);
+    // Position relative to viewport-wrapper
+    var wrapperRect = $viewportWrapper.getBoundingClientRect();
+    var vpRect = $viewport.getBoundingClientRect();
+    dot.style.left = (vpRect.left - wrapperRect.left + screenX) + 'px';
+    dot.style.top = (vpRect.top - wrapperRect.top + screenY) + 'px';
+
+    var removeBtn = document.createElement('span');
+    removeBtn.className = 'dot-remove';
+    removeBtn.textContent = '\u2715';
+    removeBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      dot.remove();
+      if (labelEl) labelEl.remove();
+      state.highlights = state.highlights.filter(function(h) { return h.el !== dot; });
+    });
+    dot.appendChild(removeBtn);
+
+    // Label next to the dot
+    var labelEl = document.createElement('div');
+    labelEl.style.cssText = 'position:absolute;left:' + (vpRect.left - wrapperRect.left + screenX + 12) + 'px;top:' + (vpRect.top - wrapperRect.top + screenY - 8) + 'px;background:var(--accent-yellow);color:#000;font-size:11px;font-weight:bold;padding:2px 6px;border-radius:3px;z-index:21;white-space:nowrap;pointer-events:all;cursor:pointer;font-family:monospace';
+    labelEl.textContent = label;
+    labelEl.addEventListener('click', function(e) {
+      e.stopPropagation();
+      dot.remove();
+      labelEl.remove();
+      state.highlights = state.highlights.filter(function(h) { return h.el !== dot; });
+    });
+    $viewportWrapper.appendChild(labelEl);
+
+    $viewportWrapper.appendChild(dot);
+    state.highlights.push({ el: dot, labelEl: labelEl, x: virtX, y: virtY, label: label });
+  }
+
+  function clearHighlights() {
+    for (var i = 0; i < state.highlights.length; i++) {
+      if (state.highlights[i].el && state.highlights[i].el.parentNode) state.highlights[i].el.remove();
+      if (state.highlights[i].labelEl && state.highlights[i].labelEl.parentNode) state.highlights[i].labelEl.remove();
+    }
+    state.highlights = [];
+  }
+
+  window.toggleHighlightMode = function() {
+    state.highlightMode = !state.highlightMode;
+    state.interactionMode = state.highlightMode ? 'highlight' : 'click';
+
+    // Update all mode buttons
+    var allModes = document.querySelectorAll('.cb-mode');
+    for (var i = 0; i < allModes.length; i++) allModes[i].classList.remove('active-mode');
+
+    if (state.highlightMode) {
+      $highlightToggle.classList.add('active-mode');
+      $viewport.style.cursor = 'cell';
+      if (!state.waitforActive) {
+        $statusText.textContent = 'Point mode — click to mark elements for AI';
+      }
+    } else {
+      document.getElementById('mode-click').classList.add('active-mode');
+      $viewport.style.cursor = 'crosshair';
+      if (!state.waitforActive) {
+        $statusText.textContent = 'Connected';
+      }
+      clearHighlights();
+    }
+  };
+
+  // ---- Takeover ----
+  window.toggleTakeover = function() {
+    if (state.humanControl) {
+      apiPost('/release').then(function() {
+        state.humanControl = false;
+        updateControlUI();
+      });
+    } else {
+      apiPost('/takeover').then(function() {
+        state.humanControl = true;
+        updateControlUI();
+      });
+    }
+  };
+
+  function updateControlUI() {
+    if (state.humanControl) {
+      $takeoverBtn.textContent = '\uD83D\uDD35 RELEASE';
+      $takeoverBtn.classList.add('human');
+      $controlIndicator.textContent = 'HUMAN';
+      $controlIndicator.style.background = '#0066cc';
+    } else {
+      $takeoverBtn.textContent = '\uD83D\uDD34 TAKEOVER';
+      $takeoverBtn.classList.remove('human');
+      $controlIndicator.textContent = '  AI  ';
+      $controlIndicator.style.background = '#006600';
+    }
+  }
+
+  // ---- Notification sound ----
+  // Pre-generate a ding sound as a WAV data URI
+  function generateDingWav() {
+    var sampleRate = 8000;
+    var duration = 0.8;
+    var samples = Math.floor(sampleRate * duration);
+    var buffer = new ArrayBuffer(44 + samples * 2);
+    var view = new DataView(buffer);
+    // WAV header
+    function writeStr(offset, str) { for (var i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); }
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + samples * 2, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, samples * 2, true);
+    // Pleasant 3-note chime — C5 E5 G5 (major chord arpeggio)
+    // 3-note rising chime with long tail
+    var notes = [
+      { freq: 523, start: 0, dur: 0.35 },      // C5
+      { freq: 659, start: 0.15, dur: 0.35 },    // E5
+      { freq: 784, start: 0.30, dur: 0.5 }       // G5 — rings longest
+    ];
+    for (var i = 0; i < samples; i++) {
+      var t = i / sampleRate;
+      var sample = 0;
+      for (var n = 0; n < notes.length; n++) {
+        var note = notes[n];
+        var nt = t - note.start;
+        if (nt >= 0 && nt < note.dur) {
+          // Quick attack, slow exponential decay (bell-like)
+          var attack = Math.min(1, nt / 0.01);
+          var decay = Math.exp(-nt * 4);
+          var env = attack * decay;
+          sample += Math.sin(2 * Math.PI * note.freq * nt) * 0.25 * env;
+          // Add a soft harmonic for warmth
+          sample += Math.sin(2 * Math.PI * note.freq * 2 * nt) * 0.08 * env;
+        }
+      }
+      view.setInt16(44 + i * 2, Math.floor(Math.max(-1, Math.min(1, sample)) * 32767), true);
+    }
+    var blob = new Blob([buffer], { type: 'audio/wav' });
+    return URL.createObjectURL(blob);
+  }
+  var dingUrl = generateDingWav();
+
+  state.chimeEnabled = true;
+  // Restore chime setting
+  try { state.chimeEnabled = localStorage.getItem('humanaie-chime') !== 'off'; } catch(e) {}
+
+  window.toggleChime = function() {
+    var cb = document.getElementById('chime-toggle');
+    state.chimeEnabled = cb.checked;
+    try { localStorage.setItem('humanaie-chime', state.chimeEnabled ? 'on' : 'off'); } catch(e) {}
+  };
+
+  // Restore checkbox state on load
+  (function() {
+    var cb = document.getElementById('chime-toggle');
+    if (cb) cb.checked = state.chimeEnabled;
+  })();
+
+  function playDing() {
+    if (!state.chimeEnabled) return;
+    try {
+      var audio = new Audio(dingUrl);
+      audio.volume = 0.5;
+      audio.play().catch(function() {});
+    } catch(e) {}
+  }
+
+  // ---- Browser notifications ----
+  function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }
+  requestNotificationPermission();
+
+  function notifyUser(title, body) {
+    // Browser notification (works even if tab is not focused)
+    if ('Notification' in window && Notification.permission === 'granted') {
+      var n = new Notification(title, {
+        body: body,
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">👆</text></svg>',
+        requireInteraction: true
+      });
+      n.onclick = function() {
+        window.focus();
+        n.close();
+      };
+      // Auto-close after 15 seconds
+      setTimeout(function() { n.close(); }, 15000);
+    }
+    // Also flash the page title
+    var origTitle = document.title;
+    var flashCount = 0;
+    var flashInterval = setInterval(function() {
+      document.title = flashCount % 2 === 0 ? '⚠️ AI NEEDS HELP' : origTitle;
+      flashCount++;
+      if (flashCount > 10 || document.hasFocus()) {
+        clearInterval(flashInterval);
+        document.title = origTitle;
+      }
+    }, 500);
+  }
+
+  // ---- Waitfor (AI asks for help) ----
+  function pollWaitfor() {
+    apiGet('/waitfor-highlight/status').then(function(data) {
+      if (data && data.waiting) {
+        state.waitforActive = true;
+        state.waitforMessage = data.message || 'AI needs your help';
+
+        // Highlight just the status text, not the whole bar
+        $statusText.style.background = 'var(--accent-yellow)';
+        $statusText.style.color = '#000';
+        $statusText.style.fontWeight = 'bold';
+        $statusText.style.padding = '1px 8px';
+        $statusText.style.borderRadius = '3px';
+
+        if (data.answered) {
+          $statusText.textContent = 'Highlighted — waiting for AI to read...';
+          $statusText.style.background = '#66aa66';
+          $statusText.style.color = '#fff';
+          $waitforBanner.classList.remove('visible');
+          return;
+        }
+
+        // Not answered yet — show the question
+        $statusText.textContent = state.waitforMessage + '  [click to highlight]';
+
+        // Show waitfor banner for correction input
+        $waitforMsg.textContent = state.waitforMessage;
+        $waitforBanner.classList.add('visible');
+
+        // Ding + notification only on FIRST detection (not every poll)
+        if (!state.waitforNotified) {
+          state.waitforNotified = true;
+          playDing();
+          notifyUser('HumanAIE — AI needs help', state.waitforMessage);
+          if (!state.highlightMode) {
+            toggleHighlightMode();
+          }
+        }
+      } else {
+        if (state.waitforActive) {
+          // Was active, now cleared — reset status bar
+          $statusText.style.background = '';
+          $statusText.style.color = '';
+          $statusText.style.fontWeight = '';
+          $statusText.style.padding = '';
+          $statusText.style.borderRadius = '';
+          $statusText.textContent = 'Connected';
+          clearHighlights();
+        }
+        state.waitforActive = false;
+        state.waitforNotified = false;
+        $waitforBanner.classList.remove('visible');
+      }
+    });
+  }
+
+  window.sendWaitforCorrection = function() {
+    var text = $waitforInput.value.trim();
+    if (!text) return;
+    apiPost('/highlight', { x: 0, y: 0, label: 'CORRECTION: ' + text }).then(function() {
+      $waitforInput.value = '';
+    });
+  };
+
+  window.dismissWaitfor = function() {
+    $waitforBanner.classList.remove('visible');
+    state.waitforActive = false;
+    apiPost('/waitfor-highlight/done');
+  };
+
+  $waitforInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendWaitforCorrection();
+  });
+
+  // ---- Status polling ----
+  function pollStatus() {
+    apiGet('/live/status').then(function(data) {
+      if (data && typeof data.url !== 'undefined') {
+        state.connected = true;
+        $statusDot.style.background = 'var(--status-green)';
+        if (!state.splashVisible && !state.waitforActive) {
+          $statusText.textContent = 'Connected';
+        }
+        if (data.url && data.url !== state.currentUrl) {
+          state.currentUrl = data.url;
+          $urlBar.value = data.url;
+        }
+        // Control state from server
+        if (typeof data.humanControl !== 'undefined') {
+          state.humanControl = data.humanControl;
+          updateControlUI();
+        }
+      } else {
+        state.connected = false;
+        $statusDot.style.background = 'var(--status-red)';
+        if (!state.waitforActive) {
+          $statusText.textContent = 'Disconnected';
+        }
+      }
+    }).catch(function() {
+      state.connected = false;
+      $statusDot.classList.remove('connected');
+      $statusText.textContent = 'Disconnected';
+    });
+  }
+
+  // ---- Type / Key ----
+  var $typeInput = document.getElementById('type-input');
+  $typeInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); sendType(); }
+  });
+
+  window.sendType = function() {
+    var text = $typeInput.value;
+    if (!text) return;
+    recordAction('type', { text: text });
+    apiPost('/live/type', { text: text });
+    $typeInput.value = '';
+  };
+
+  window.sendKey = function(key) {
+    recordAction('key', { key: key });
+    apiPost('/live/key', { key: key });
+  };
+
+  // ---- Interaction modes ----
+  window.setMode = function(mode) {
+    state.interactionMode = mode;
+    if (mode !== 'highlight' && state.highlightMode) {
+      state.highlightMode = false;
+      clearHighlights();
+    }
+    // Update button styles
+    var allModes = document.querySelectorAll('.cb-mode');
+    for (var i = 0; i < allModes.length; i++) allModes[i].classList.remove('active-mode');
+    var btn = document.getElementById('mode-' + mode);
+    if (btn) btn.classList.add('active-mode');
+    // Update cursor
+    if (mode === 'drag') $viewport.style.cursor = 'grab';
+    else if (mode === 'highlight') $viewport.style.cursor = 'cell';
+    else $viewport.style.cursor = 'crosshair';
+  };
+
+  // ---- Drag handling ----
+  var dragState = null;
+
+  $viewport.addEventListener('mousedown', function(e) {
+    if (state.interactionMode !== 'drag' || state.splashVisible) return;
+    var coords = screenToVirtual(e);
+    if (!coords) return;
+    dragState = {
+      startX: coords.x,
+      startY: coords.y,
+      screenX: e.clientX,
+      screenY: e.clientY
+    };
+    $viewport.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragState) return;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mouseup', function(e) {
+    if (!dragState) return;
+    var coords = screenToVirtual(e);
+    var endX = coords ? coords.x : dragState.startX;
+    var endY = coords ? coords.y : dragState.startY;
+
+    var dx = Math.abs(endX - dragState.startX);
+    var dy = Math.abs(endY - dragState.startY);
+
+    if (dx < 5 && dy < 5) {
+      // Too short — treat as click
+      apiPost('/live/click', { x: dragState.startX, y: dragState.startY });
+    } else {
+      // Real drag
+      apiPost('/live/scroll', {
+        direction: (endY < dragState.startY) ? 'down' : 'up',
+        amount: Math.abs(endY - dragState.startY)
+      });
+    }
+
+    dragState = null;
+    if (state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
+  });
+
+  // ---- Recording (learn workflow) ----
+  state.recording = false;
+  state.recordedActions = [];
+  state.recordStartUrl = '';
+  var $recordBtn = document.getElementById('record-btn');
+
+  window.toggleRecording = function() {
+    if (state.recording) {
+      // Stop recording
+      state.recording = false;
+      $recordBtn.textContent = '\u26AB Record';
+      $recordBtn.style.color = '';
+      $recordBtn.style.background = '';
+
+      if (state.recordedActions.length === 0) return;
+
+      // Ask for workflow name
+      var name = prompt('Name this workflow (e.g. "login to example.com"):', '');
+      if (!name) return;
+
+      var workflow = {
+        name: name,
+        startUrl: state.recordStartUrl,
+        domain: (function() { try { return new URL(state.recordStartUrl).hostname; } catch(e) { return ''; } })(),
+        steps: state.recordedActions,
+        recordedAt: new Date().toISOString()
+      };
+
+      // Save to server
+      apiPost('/highlight', {
+        x: 0, y: 0,
+        label: 'WORKFLOW:' + JSON.stringify(workflow)
+      });
+
+      $statusText.textContent = 'Workflow "' + name + '" saved (' + state.recordedActions.length + ' steps)';
+      state.recordedActions = [];
+    } else {
+      // Start recording
+      state.recording = true;
+      state.recordedActions = [];
+      state.recordStartUrl = state.currentUrl || $urlBar.value || '';
+      $recordBtn.textContent = '\uD83D\uDD34 Stop';
+      $recordBtn.style.color = '#fff';
+      $recordBtn.style.background = '#cc0000';
+      $statusText.textContent = 'Recording workflow...';
+    }
+  };
+
+  function recordAction(action, data) {
+    if (!state.recording) return;
+    state.recordedActions.push({
+      action: action,
+      data: data,
+      url: state.currentUrl || '',
+      time: Date.now()
+    });
+  }
+
+  // ---- Popup panels ----
+  window.togglePopup = function(id, event) {
+    if (event) event.stopPropagation();
+    var panel = document.getElementById(id);
+    var wasOpen = panel.classList.contains('open');
+    // Close all popups first
+    var all = document.querySelectorAll('.popup-panel');
+    for (var i = 0; i < all.length; i++) all[i].classList.remove('open');
+    // Toggle the clicked one
+    if (!wasOpen) panel.classList.add('open');
+  };
+
+  // Close popups when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.popup-anchor') && !e.target.closest('.popup-panel')) {
+      var all = document.querySelectorAll('.popup-panel');
+      for (var i = 0; i < all.length; i++) all[i].classList.remove('open');
+    }
+  });
+
+  // ---- Scroll ----
+  window.scrollPage = function(direction, amount) {
+    apiPost('/live/scroll', { direction: direction, amount: amount });
+  };
+
+  // ---- FPS control ----
+  window.changeFps = function() {
+    var sel = document.getElementById('fps-select');
+    state.pollInterval = parseInt(sel.value);
+    try { localStorage.setItem('humanaie-fps', sel.value); } catch(e) {}
+    // Restart polling with new interval
+    if (state.pollingTimer) {
+      clearInterval(state.pollingTimer);
+      state.pollingTimer = setInterval(pollFrame, state.pollInterval);
+    }
+  };
+
+  // Restore saved FPS
+  (function() {
+    var saved = null;
+    try { saved = localStorage.getItem('humanaie-fps'); } catch(e) {}
+    if (saved) {
+      var sel = document.getElementById('fps-select');
+      if (sel) {
+        sel.value = saved;
+        state.pollInterval = parseInt(saved);
+      }
+    }
+  })();
+
+  // ---- Viewport resize ----
+  window.resizeViewportFromCtrl = function() {
+    var sel = document.getElementById('viewport-size-ctrl');
+    var parts = sel.value.split('x');
+    var w = parseInt(parts[0]);
+    var h = parseInt(parts[1]);
+    state.viewportWidth = w;
+    state.viewportHeight = h;
+    apiPost('/resize', { width: w, height: h });
+    try { localStorage.setItem('humanaie-res', sel.value); } catch(e) {}
+  };
+
+  // Restore saved resolution
+  (function() {
+    var saved = null;
+    try { saved = localStorage.getItem('humanaie-res'); } catch(e) {}
+    if (saved) {
+      var sel = document.getElementById('viewport-size-ctrl');
+      if (sel) {
+        sel.value = saved;
+        var parts = saved.split('x');
+        state.viewportWidth = parseInt(parts[0]);
+        state.viewportHeight = parseInt(parts[1]);
+      }
+    }
+  })();
+
+  // ---- Init ----
+  function init() {
+    showSplash();
+    loadTabs();
+    pollStatus();
+    // Set initial viewport size
+    resizeViewportFromCtrl();
+
+    // Periodic polls
+    setInterval(pollStatus, 5000);
+    setInterval(function() { if (state.connected) pollWaitfor(); }, 3000);
+
+    // Load splash data from server
+    function loadSplashData() {
+      // Quick launch from bookmarks + frequent sites
+      var el = document.getElementById('splash-quicklaunch');
+      if (el) {
+        el.textContent = '';
+
+        // Bookmarks first
+        var bookmarks = [];
+        try { bookmarks = JSON.parse(localStorage.getItem('humanaie-bookmarks') || '[]'); } catch(e) {}
+        bookmarks.forEach(function(url) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:4px';
+          var a = document.createElement('a');
+          a.href = '#';
+          a.style.cssText = 'color:var(--accent-yellow);text-decoration:none;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          try { a.textContent = '\u2605 ' + new URL(url).hostname; } catch(e2) { a.textContent = '\u2605 ' + url; }
+          a.title = url;
+          a.addEventListener('click', function(e) { e.preventDefault(); $urlBar.value = url; navigate(); });
+          var x = document.createElement('span');
+          x.textContent = '\u00d7';
+          x.style.cssText = 'color:#666;cursor:pointer;font-size:14px';
+          x.addEventListener('click', function() { removeBookmark(url); });
+          row.appendChild(a);
+          row.appendChild(x);
+          el.appendChild(row);
+        });
+
+        // Then frequent from history
+        apiGet('/history/frequent').then(function(d) {
+          var items = (d && d.frequent) ? d.frequent.slice(0, 6 - bookmarks.length) : [];
+          items.forEach(function(item) {
+            var a = document.createElement('a');
+            a.href = '#';
+            a.style.cssText = 'color:#aaa;text-decoration:none;font-size:12px';
+            a.textContent = item.domain + ' (' + item.count + ')';
+            a.addEventListener('click', function(e) { e.preventDefault(); $urlBar.value = item.url; navigate(); });
+            el.appendChild(a);
+          });
+          if (bookmarks.length === 0 && items.length === 0) {
+            el.textContent = 'No bookmarks or history yet';
+          }
+        });
+      }
+
+      // Recent history
+      apiGet('/history?limit=8').then(function(d) {
+        var el = document.getElementById('splash-history');
+        if (!el) return;
+        var items = (d && d.history) ? d.history : [];
+        if (items.length === 0) {
+          el.textContent = 'No history yet';
+          return;
+        }
+        el.textContent = '';
+        items.forEach(function(item) {
+          var a = document.createElement('a');
+          a.href = '#';
+          a.style.cssText = 'color:#aaa;text-decoration:none;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block';
+          var host = '';
+          try { host = new URL(item.url).hostname; } catch(e) { host = item.url; }
+          a.textContent = host;
+          a.title = item.url;
+          a.addEventListener('click', function(e) {
+            e.preventDefault();
+            $urlBar.value = item.url;
+            navigate();
+          });
+          el.appendChild(a);
+        });
+      });
+    }
+    loadSplashData();
+
+    // Fetch version from server and populate all ver-tag spans
+    apiGet('/version').then(function(d) {
+      if (d && d.version) {
+        var tags = document.querySelectorAll('.ver-tag');
+        for (var i = 0; i < tags.length; i++) tags[i].textContent = 'v' + d.version;
+        document.title = 'HumanAIE v' + d.version + ' \u2014 Human AI Eyes';
+      }
+    });
+
+    // Bookmarks (stored in localStorage)
+    window.addBookmark = function() {
+      var input = document.getElementById('bookmark-input');
+      var url = input.value.trim();
+      if (!url) return;
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+      var bookmarks = [];
+      try { bookmarks = JSON.parse(localStorage.getItem('humanaie-bookmarks') || '[]'); } catch(e) {}
+      if (!bookmarks.includes(url)) {
+        bookmarks.push(url);
+        try { localStorage.setItem('humanaie-bookmarks', JSON.stringify(bookmarks)); } catch(e) {}
+      }
+      input.value = '';
+      loadSplashData();
+    };
+
+    window.removeBookmark = function(url) {
+      var bookmarks = [];
+      try { bookmarks = JSON.parse(localStorage.getItem('humanaie-bookmarks') || '[]'); } catch(e) {}
+      bookmarks = bookmarks.filter(function(b) { return b !== url; });
+      try { localStorage.setItem('humanaie-bookmarks', JSON.stringify(bookmarks)); } catch(e) {}
+      loadSplashData();
+    };
+
+    window.clearHistory = function() {
+      if (!confirm('Clear all browsing history?')) return;
+      fetch('/history', { method: 'DELETE' }).then(function() { loadSplashData(); });
+    };
+
+    // Update splash panels
+    function updateSplash() {
+      var connEl = document.getElementById('splash-connection');
+      var tabsEl = document.getElementById('splash-tabs');
+      var resEl = document.getElementById('splash-res');
+      if (connEl) connEl.textContent = state.connected ? '🟢 Connected' : '🔴 Offline';
+      if (tabsEl) tabsEl.textContent = 'Tabs: ' + (state.tabs ? state.tabs.length : 0);
+      if (resEl) resEl.textContent = 'Res: ' + (state.viewportWidth || 1280) + '×' + (state.viewportHeight || 1024);
+    }
+    updateSplash();
+    setInterval(updateSplash, 3000);
+
+    // Check if server already has a real page loaded
+    apiGet('/live/status').then(function(data) {
+      if (data && data.url && data.url !== 'about:blank' && data.url !== '') {
+        state.currentUrl = data.url;
+        $urlBar.value = data.url;
+        hideSplash();
+        startFrameStream();
+        loadTabs();
+      }
+    });
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>

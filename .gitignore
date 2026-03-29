@@ -1,0 +1,17 @@
+node_modules/
+browsers/
+*.log
+.env
+
+# Session data
+humanaie-sessions/
+sessions/
+
+# User data (generated at runtime)
+history.json
+highlight-history.jsonl
+humanaie-interactions.jsonl
+
+# Recordings
+recordings/
+screenshots/

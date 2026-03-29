@@ -1,0 +1,11 @@
+{
+  "name": "humanaie",
+  "version": "1.0.0",
+  "description": "Shared browser for human-AI collaboration. Browse the web with AI while the human watches, helps with captchas, and teaches via highlights.",
+  "author": {
+    "name": "datboip"
+  },
+  "repository": "https://github.com/datboip/HumanAIE",
+  "license": "MIT",
+  "keywords": ["browser", "remote-desktop", "human-in-the-loop", "captcha", "playwright", "highlight"]
+}
