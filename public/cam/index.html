@@ -447,6 +447,7 @@
     z-index: 25;
     animation: ripple-out 0.6s ease-out forwards;
   }
+  .click-ripple.ai { border-color: #33cc55; }
   @keyframes ripple-out {
     0% { transform: scale(0.5); opacity: 1; }
     100% { transform: scale(3); opacity: 0; }
@@ -461,11 +462,28 @@
     z-index: 25;
     animation: dot-fade 1s ease-out forwards;
   }
+  .click-dot.ai { background: #33cc55; }
   @keyframes dot-fade {
     0% { opacity: 1; }
     70% { opacity: 1; }
     100% { opacity: 0; }
   }
+  /* AI/Human cursor */
+  #ai-cursor {
+    position: absolute;
+    pointer-events: none;
+    z-index: 30;
+    width: 24px;
+    height: 24px;
+    filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+    transition: left 0.5s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+    display: none;
+  }
+  #ai-cursor svg { width: 24px; height: 24px; }
+  #ai-cursor .cursor-fill { fill: #33cc55; }
+  #ai-cursor .cursor-stroke { fill: #fff; }
+  #ai-cursor.human .cursor-fill { fill: #ff3333; }
+  #ai-cursor.human .cursor-stroke { fill: #fff; }
 
   /* ---- Status bar ---- */
   #statusbar {
@@ -591,6 +609,7 @@
       <div class="hint" style="margin-top:16px">Enter a URL above or click Quick Launch</div>
     </div>
     <img id="viewport" alt="Browser viewport">
+    <div id="ai-cursor"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="cursor-stroke" d="M3 1L21 12L12.5 13.5L8.5 22L3 1Z" stroke-width="0"/><path class="cursor-fill" d="M5 4L18 12L12 13.2L8.8 20L5 4Z"/></svg></div>
 
   </div>
 
@@ -668,6 +687,16 @@
             <input type="checkbox" id="chime-toggle" checked onchange="toggleChime()" style="cursor:pointer"> Notification chime
           </label>
         </div>
+        <div class="popup-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="cursor-toggle" checked onchange="toggleCursor()" style="cursor:pointer"> Show cursor
+          </label>
+        </div>
+        <div class="popup-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="ripple-toggle" checked onchange="toggleRipple()" style="cursor:pointer"> Show click ripples
+          </label>
+        </div>
       </div>
     </div>
 
@@ -679,7 +708,7 @@
   <!-- Status bar -->
   <div id="statusbar">
     <div class="sb-left" style="display:flex;align-items:center;gap:6px">
-      <span style="font-weight:bold;font-size:11px">HumanAIE</span>
+      <span style="font-weight:bold;font-size:11px">HumanAIE <span class="ver-tag" style="font-weight:normal;opacity:0.7">v1.0.1</span></span>
       <div id="status-dot" style="width:8px;height:8px;border-radius:50%;background:#c00;flex-shrink:0"></div>
       <span id="status-text" style="font-size:11px;flex:1">Loading...</span>
     </div>
@@ -719,7 +748,10 @@
     viewportHeight: 1024,
     pollInterval: 100,
     interactionMode: 'click',
-    waitforNotified: false
+    waitforNotified: false,
+    showCursor: true,
+    showRipples: true,
+    sseConnected: false
   };
 
   // ---- DOM refs ----
@@ -1080,22 +1112,8 @@
         $waitforBanner.classList.remove('visible');
       }
     } else {
-      // Show click ripple
-      var ripple = document.createElement('div');
-      ripple.className = 'click-ripple';
-      var wRect = $viewportWrapper.getBoundingClientRect();
-      var vpRect = $viewport.getBoundingClientRect();
-      ripple.style.left = (vpRect.left - wRect.left + (e.clientX - rect.left) - 10) + 'px';
-      ripple.style.top = (vpRect.top - wRect.top + (e.clientY - rect.top) - 10) + 'px';
-      $viewportWrapper.appendChild(ripple);
-      setTimeout(function() { ripple.remove(); }, 600);
-
-      var dot = document.createElement('div');
-      dot.className = 'click-dot';
-      dot.style.left = (vpRect.left - wRect.left + (e.clientX - rect.left) - 3) + 'px';
-      dot.style.top = (vpRect.top - wRect.top + (e.clientY - rect.top) - 3) + 'px';
-      $viewportWrapper.appendChild(dot);
-      setTimeout(function() { dot.remove(); }, 1000);
+      // Show click ripple + cursor (human = red)
+      showClickEffect(e.clientX - rect.left, e.clientY - rect.top, 'human');
 
       recordAction('click', { x: x, y: y });
       apiPost('/live/click', { x: x, y: y });
@@ -1112,6 +1130,138 @@
   $viewport.addEventListener('mouseleave', function() {
     $cursorCoords.textContent = 'x:\u2014 y:\u2014';
   });
+
+  // ---- AI/Human cursor + click effects ----
+  var $aiCursor = document.getElementById('ai-cursor');
+
+  // Convert virtual (server) coordinates to screen position on the viewport element
+  function virtualToScreen(vx, vy) {
+    var vpRect = $viewport.getBoundingClientRect();
+    var wRect = $viewportWrapper.getBoundingClientRect();
+    var imgW = $viewport.naturalWidth || state.viewportWidth;
+    var imgH = $viewport.naturalHeight || state.viewportHeight;
+    var dispW = vpRect.width;
+    var dispH = vpRect.height;
+    // Account for object-fit:contain letterboxing
+    var scale = Math.min(dispW / imgW, dispH / imgH);
+    var renderW = imgW * scale;
+    var renderH = imgH * scale;
+    var offsetX = (dispW - renderW) / 2;
+    var offsetY = (dispH - renderH) / 2;
+    var sx = offsetX + (vx / state.viewportWidth) * renderW;
+    var sy = offsetY + (vy / state.viewportHeight) * renderH;
+    // Offset relative to viewport-wrapper
+    var dx = vpRect.left - wRect.left;
+    var dy = vpRect.top - wRect.top;
+    return { x: dx + sx, y: dy + sy };
+  }
+
+  function moveCursor(screenX, screenY, source) {
+    if (!state.showCursor) return;
+    // Human clicks teleport, AI clicks glide
+    if (source === 'human') {
+      $aiCursor.style.transition = 'none';
+      $aiCursor.classList.add('human');
+    } else {
+      $aiCursor.style.transition = 'left 0.5s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.5s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease';
+      $aiCursor.classList.remove('human');
+    }
+    $aiCursor.style.opacity = '1';
+    $aiCursor.style.left = (screenX - 6) + 'px';
+    $aiCursor.style.top = (screenY - 2) + 'px';
+  }
+
+  function showClickEffect(relX, relY, source) {
+    var vpRect = $viewport.getBoundingClientRect();
+    var wRect = $viewportWrapper.getBoundingClientRect();
+    var dx = vpRect.left - wRect.left;
+    var dy = vpRect.top - wRect.top;
+    var sx = dx + relX;
+    var sy = dy + relY;
+
+    // Move cursor
+    moveCursor(sx, sy, source);
+
+    if (!state.showRipples) return;
+    var cls = source === 'ai' ? ' ai' : '';
+    // Ripple
+    var ripple = document.createElement('div');
+    ripple.className = 'click-ripple' + cls;
+    ripple.style.left = (sx - 10) + 'px';
+    ripple.style.top = (sy - 10) + 'px';
+    $viewportWrapper.appendChild(ripple);
+    setTimeout(function() { ripple.remove(); }, 600);
+    // Dot
+    var dot = document.createElement('div');
+    dot.className = 'click-dot' + cls;
+    dot.style.left = (sx - 3) + 'px';
+    dot.style.top = (sy - 3) + 'px';
+    $viewportWrapper.appendChild(dot);
+    setTimeout(function() { dot.remove(); }, 1000);
+  }
+
+  function showAiClickAt(vx, vy) {
+    var pos = virtualToScreen(vx, vy);
+    var vpRect = $viewport.getBoundingClientRect();
+    var wRect = $viewportWrapper.getBoundingClientRect();
+    var dx = vpRect.left - wRect.left;
+    var dy = vpRect.top - wRect.top;
+    // showClickEffect expects coords relative to viewport element
+    showClickEffect(pos.x - dx, pos.y - dy, 'ai');
+  }
+
+  // ---- SSE event stream for AI actions ----
+  function connectSSE() {
+    if (state.sseConnected) return;
+    var es = new EventSource('/events');
+    es.onmessage = function(e) {
+      try {
+        var data = JSON.parse(e.data);
+        // AI click or hover — show cursor + ripple
+        if ((data.type === 'Click' || data.type === 'Hover') && data.source === 'agent' && typeof data.clickX === 'number') {
+          showAiClickAt(data.clickX, data.clickY);
+        }
+      } catch(err) {}
+    };
+    es.onopen = function() { state.sseConnected = true; };
+    es.onerror = function() {
+      state.sseConnected = false;
+      setTimeout(connectSSE, 5000);
+    };
+  }
+
+  // ---- Cursor/ripple settings ----
+  window.toggleCursor = function() {
+    var cb = document.getElementById('cursor-toggle');
+    state.showCursor = cb.checked;
+    localStorage.setItem('humanaie-show-cursor', cb.checked ? '1' : '0');
+    if (!cb.checked) $aiCursor.style.display = 'none';
+  };
+  window.toggleRipple = function() {
+    var cb = document.getElementById('ripple-toggle');
+    state.showRipples = cb.checked;
+    localStorage.setItem('humanaie-show-ripples', cb.checked ? '1' : '0');
+  };
+  // Restore settings from localStorage
+  (function() {
+    var cVal = localStorage.getItem('humanaie-show-cursor');
+    var rVal = localStorage.getItem('humanaie-show-ripples');
+    if (cVal === '0') {
+      state.showCursor = false;
+      document.getElementById('cursor-toggle').checked = false;
+    }
+    if (rVal === '0') {
+      state.showRipples = false;
+      document.getElementById('ripple-toggle').checked = false;
+    }
+  })();
+
+  // Start SSE connection + pre-position cursor off-screen so first glide works
+  $aiCursor.style.left = '-50px';
+  $aiCursor.style.top = '-50px';
+  $aiCursor.style.display = 'block';
+  $aiCursor.style.opacity = '0';
+  connectSSE();
 
   // ---- Highlight system ----
   function addHighlightDot(screenX, screenY, virtX, virtY, label) {

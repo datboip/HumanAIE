@@ -931,7 +931,7 @@ app.post('/navigate', async (req, res) => {
 
 app.post('/hover', async (req, res) => {
   const { x, y } = req.body;
-  pushAction('Hover', `(${x}, ${y})`, 'info');
+  pushAction('Hover', `(${x}, ${y})`, 'info', { clickX: x, clickY: y, source: 'agent' });
   try {
     await page.mouse.move(x, y);
     await page.waitForTimeout(800);
