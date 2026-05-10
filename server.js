@@ -4,7 +4,12 @@ const AUTH_PASS = process.env.HUMANAIE_PASS || "";
 const DATA_DIR = process.env.HUMANAIE_DATA_DIR || process.cwd();
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || `${DATA_DIR}/browsers`;
 const express = require('express');
-const { chromium } = require('playwright');
+// Stealth stack: playwright-extra wraps standard playwright + the
+// puppeteer-extra stealth plugin patches the JS fingerprint surface
+// (navigator.webdriver, plugin spoofing, WebGL, Permissions, Chrome runtime).
+const { chromium } = require('playwright-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+chromium.use(StealthPlugin());
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
@@ -630,16 +635,23 @@ async function initBrowser() {
     headless: true,
     args: [
       '--no-sandbox',
-      '--disable-infobars',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
       '--window-position=0,0',
       '--window-size=1280,720',
       '--app=about:blank',
+      '--lang=en-US,en',
     ]
   });
-  const contextOptions = { viewport: { width: 1280, height: 720 } };
+  const contextOptions = {
+    viewport: { width: 1280, height: 720 },
+    userAgent:
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
+    extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+  };
   context = await browser.newContext(contextOptions);
 
   // Auto-restart browser if Chromium crashes
