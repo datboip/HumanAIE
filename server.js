@@ -644,10 +644,11 @@ async function initBrowser() {
       '--lang=en-US,en',
     ]
   });
+  // Track Chromium's real major version so the UA can't drift from the JS fingerprint.
+  const browserMajor = browser.version().split('.')[0];
   const contextOptions = {
     viewport: { width: 1280, height: 720 },
-    userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    userAgent: `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${browserMajor}.0.0.0 Safari/537.36`,
     locale: 'en-US',
     timezoneId: 'America/New_York',
     extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
