@@ -125,9 +125,10 @@ if (!ADB_AVAILABLE) {
     if (x1 == null || y1 == null || x2 == null || y2 == null) {
       return res.status(400).json({ error: 'x1,y1,x2,y2 required' });
     }
+    const safeDur = Math.max(1, Math.min(10000, parseInt(dur, 10) || 300));
     try {
       await adbAsync('shell',
-        `input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${dur}`);
+        `input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${safeDur}`);
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -135,7 +136,7 @@ if (!ADB_AVAILABLE) {
   router.post('/type', async (req, res) => {
     const { text } = req.body || {};
     if (text == null || text === '') return res.status(400).json({ error: 'text required' });
-    const safe = String(text).replace(/(['"\\();<>&| ])/g, '\\$1');
+    const safe = String(text).replace(/([^a-zA-Z0-9@.,!?\-])/g, '\\$1');
     try {
       await adbAsync('shell', `input text ${safe}`);
       res.json({ ok: true });
@@ -252,6 +253,9 @@ if (!ADB_AVAILABLE) {
   router.post('/launch', async (req, res) => {
     const { pkg } = req.body || {};
     if (!pkg) return res.status(400).json({ error: 'pkg required' });
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(String(pkg))) {
+      return res.status(400).json({ error: 'invalid package name (e.g., com.example.app)' });
+    }
     try {
       await adbAsync('shell', `monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`);
       res.json({ ok: true });
