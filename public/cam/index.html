@@ -180,6 +180,25 @@
     border-bottom: none;
   }
   #new-tab-btn:active { border-style: inset; }
+  .tab.phone-tab {
+    background: #00aa44;
+    color: #fff;
+    border-color: #006622;
+    margin-left: auto;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .tab.phone-tab:hover { background: #00cc55; }
+  .tab.phone-tab.active { background: #00ff66; color: #000; }
+  .phone-tab-indicator {
+    display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%;
+    margin-left: 6px;
+    background: #888;
+  }
+  .phone-tab-indicator[data-state="connected"] { background: #0f0; }
+  .phone-tab-indicator[data-state="disconnected"] { background: #f00; }
+  .phone-tab-indicator[data-state="no-adb"]      { background: #888; }
 
   /* ---- Waitfor banner ---- */
   #waitfor-banner {
@@ -556,6 +575,11 @@
   <!-- Tab bar -->
   <div id="tabbar">
     <button id="new-tab-btn" onclick="newTab()" title="New Tab">+</button>
+    <!-- Pinned green PHONE tab — always present, can't close. Switches Cam UI to Android mode. -->
+    <div id="phone-tab" class="tab phone-tab" title="Android phone view">
+      <span class="tab-title">📱 PHONE</span>
+      <span id="phone-tab-indicator" class="phone-tab-indicator" data-state="unknown"></span>
+    </div>
   </div>
 
   <!-- Waitfor banner -->
@@ -984,8 +1008,8 @@
   }
 
   function renderTabs() {
-    // Remove existing tab elements (not the + button)
-    var existing = $tabbar.querySelectorAll('.tab');
+    // Remove existing tab elements (not the + button, not the pinned phone tab)
+    var existing = $tabbar.querySelectorAll('.tab:not(#phone-tab)');
     for (var i = 0; i < existing.length; i++) {
       existing[i].remove();
     }
@@ -1029,6 +1053,7 @@
   }
 
   window.switchTab = function(id) {
+    if (androidMode) switchToBrowserMode();
     apiPost('/tabs/switch', { id: id }).then(function(d) {
       if (d && d.url) {
         $urlBar.value = d.url;
@@ -1045,6 +1070,33 @@
       .then(function() { loadTabs(); })
       .catch(function() {});
   };
+
+  // ---- Android / PHONE mode ----
+  var androidMode = false;
+
+  function switchToAndroidMode() {
+    androidMode = true;
+    document.getElementById('phone-tab').classList.add('active');
+    document.querySelectorAll('.tab:not(.phone-tab).active').forEach(function(el) { el.classList.remove('active'); });
+    if ($viewport) $viewport.src = '/android/stream?t=' + Date.now();
+    var urlBar = document.getElementById('url-bar') || document.querySelector('.url-bar');
+    if (urlBar) urlBar.style.display = 'none';
+    var ac = document.getElementById('android-controls');
+    if (ac) ac.style.display = '';
+    if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus();
+  }
+
+  function switchToBrowserMode() {
+    androidMode = false;
+    document.getElementById('phone-tab').classList.remove('active');
+    if ($viewport) $viewport.src = '/stream?t=' + Date.now();
+    var urlBar = document.getElementById('url-bar') || document.querySelector('.url-bar');
+    if (urlBar) urlBar.style.display = '';
+    var ac = document.getElementById('android-controls');
+    if (ac) ac.style.display = 'none';
+  }
+
+  document.getElementById('phone-tab').addEventListener('click', switchToAndroidMode);
 
   window.newTab = function() {
     apiPost('/tabs/new', { url: 'about:blank' }).then(function(d) {
