@@ -797,12 +797,18 @@ app.post('/waitfor-highlight/done', (req, res) => {
 });
 
 app.post('/highlight', (req, res) => {
-  const { x, y, label } = req.body;
-  const entry = { x, y, label: label || '', time: new Date().toISOString() };
+  const { x, y, label, target, package: pkg, activity } = req.body || {};
+  const t = target === 'android' ? 'android' : 'browser';
+  const entry = { x, y, label: label || '', time: new Date().toISOString(), target: t };
   highlights.push(entry);
-  // Persist to log file so AI can recall past highlights
   try {
-    const logEntry = { ...entry, url: page ? page.url() : '', timestamp: new Date().toISOString() };
+    const logEntry = { ...entry, timestamp: new Date().toISOString() };
+    if (t === 'android') {
+      logEntry.package = pkg || '';
+      logEntry.activity = activity || '';
+    } else {
+      logEntry.url = page ? page.url() : '';
+    }
     const logPath = require('path').join(process.env.HUMANAIE_DATA_DIR || process.cwd(), 'highlight-history.jsonl');
     fs.appendFileSync(logPath, JSON.stringify(logEntry) + '\n');
   } catch(e) {}
