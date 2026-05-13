@@ -179,7 +179,62 @@ if (!ADB_AVAILABLE) {
     req.on('close', () => MJPEG_CLIENTS.delete(res));
   });
 
-  // (Subsequent tasks add /status, /info, /ui-dump, /shell, /launch, /install, /push, /pull, /record here.)
+  async function detectForeground() {
+    try {
+      const out = (await adbAsync('shell',
+        "dumpsys activity activities | grep -E 'mResumedActivity|mCurrentFocus'")).toString();
+      const m = out.match(/([a-zA-Z0-9_.]+)\/([a-zA-Z0-9_.$]+)/);
+      return m ? { package: m[1], activity: m[2] } : { package: '', activity: '' };
+    } catch { return { package: '', activity: '' }; }
+  }
+  getForeground = detectForeground; // store on outer-scope variable so module.exports.getForeground works
+
+  router.get('/info', async (req, res) => {
+    try {
+      const [model, release, serialOut] = await Promise.all([
+        adbAsync('shell', 'getprop ro.product.model').then(b => b.toString().trim()),
+        adbAsync('shell', 'getprop ro.build.version.release').then(b => b.toString().trim()),
+        adbAsync('get-serialno').then(b => b.toString().trim()).catch(() => SERIAL_REF.current),
+      ]);
+      res.json({ model, android_version: release, serial: serialOut, phone_addr: PHONE_ADDR });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.get('/status', async (req, res) => {
+    let phone_connected = false;
+    let batteryLevel = null;
+    let foreground = { package: '', activity: '' };
+    try {
+      const devOut = (await adbAsync('devices')).toString();
+      phone_connected = devOut.split('\n').slice(1).some(l => l.trim().endsWith('\tdevice'));
+    } catch {}
+    if (phone_connected) {
+      try {
+        const b = (await adbAsync('shell', 'dumpsys battery | grep level')).toString();
+        const m = b.match(/level:\s*(\d+)/); if (m) batteryLevel = parseInt(m[1], 10);
+      } catch {}
+      foreground = await detectForeground();
+    }
+    res.json({
+      adb_available: true,
+      phone_connected,
+      phone_addr: PHONE_ADDR,
+      battery: batteryLevel,
+      package: foreground.package,
+      activity: foreground.activity,
+    });
+  });
+
+  router.get('/ui-dump', async (req, res) => {
+    try {
+      await adbAsync('shell', 'uiautomator dump /sdcard/window_dump.xml');
+      const xml = await adbAsync('shell', 'cat /sdcard/window_dump.xml');
+      res.set('Content-Type', 'application/xml');
+      res.send(xml.toString());
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // (Subsequent tasks add /shell, /launch, /install, /push, /pull, /record here.)
 
   // Export helpers used by later tasks
   module.exports.adbAsync = adbAsync;
