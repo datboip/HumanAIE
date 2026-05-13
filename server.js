@@ -40,7 +40,7 @@ app.use((req, res, next) => {
   const ip = req.ip || req.connection.remoteAddress || '';
   const isLocal = ip === '127.0.0.1' || ip === '::1' || ip.endsWith('::ffff:127.0.0.1');
   const isMedia = req.path.match(/^\/sessions\/.+\/(mp4|edited\/.+|thumbnail)$/);
-  if (isLocal || req.path === '/events' || req.path === '/stream' || isMedia) return next();
+  if (isLocal || req.path === '/events' || req.path === '/stream' || req.path === '/android/stream' || isMedia) return next();
   if (!AUTH_ENABLED) return next();
   const auth = req.headers["authorization"];
   if (!auth || !auth.startsWith('Basic ')) {

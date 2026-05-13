@@ -162,7 +162,24 @@ if (!ADB_AVAILABLE) {
     res.send(frameCache);
   });
 
-  // (Subsequent tasks add /stream, /status, /info, /ui-dump, /shell, /launch, /install, /push, /pull, /record here.)
+  router.get('/stream', (req, res) => {
+    res.set({
+      'Content-Type': `multipart/x-mixed-replace;boundary=${BOUNDARY}`,
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+    res.flushHeaders();
+    MJPEG_CLIENTS.add(res);
+    if (frameCache) {
+      const isJpeg = frameCache[0] === 0xFF && frameCache[1] === 0xD8;
+      const ct = isJpeg ? 'image/jpeg' : 'image/png';
+      const header = `--${BOUNDARY}\r\nContent-Type: ${ct}\r\nContent-Length: ${frameCache.length}\r\n\r\n`;
+      res.write(header); res.write(frameCache); res.write('\r\n');
+    }
+    req.on('close', () => MJPEG_CLIENTS.delete(res));
+  });
+
+  // (Subsequent tasks add /status, /info, /ui-dump, /shell, /launch, /install, /push, /pull, /record here.)
 
   // Export helpers used by later tasks
   module.exports.adbAsync = adbAsync;
