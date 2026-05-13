@@ -217,7 +217,7 @@ AI Agent <--> REST API <--> HumanAIE Server <--> Headless Browser
 |--------|----------|-------------|
 | GET | `/version` | Server version info |
 
-### Android (HiveDroid)
+### Android (Handroid)
 
 Android endpoints are mounted when ADB is available on the server. Set `HUMANAIE_PHONE_IP` to your phone's WiFi-ADB address.
 
