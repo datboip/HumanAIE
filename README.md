@@ -3,7 +3,7 @@
 **Human AI Eyes** (pronounced "Human Eye") — a shared browser for human-AI collaboration.
 
 <!-- badges -->
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 
@@ -114,6 +114,9 @@ AI Agent <--> REST API <--> HumanAIE Server <--> Headless Browser
 - Screenshot PNG (`/screenshot`)
 - SSE event stream (`/events`)
 
+**Android Device**
+- Drive a paired Android phone via the PHONE tab on the Cam UI (requires `adb` + WiFi pairing)
+
 ---
 
 ## API Reference
@@ -214,6 +217,28 @@ AI Agent <--> REST API <--> HumanAIE Server <--> Headless Browser
 |--------|----------|-------------|
 | GET | `/version` | Server version info |
 
+### Android (HiveDroid)
+
+Android endpoints are mounted when ADB is available on the server. Set `HUMANAIE_PHONE_IP` to your phone's WiFi-ADB address.
+
+| Method | Endpoint | Body | Description |
+|--------|----------|------|-------------|
+| GET | `/android/screenshot` | -- | Current phone screen as PNG/JPEG |
+| GET | `/android/stream` | -- | MJPEG stream |
+| GET | `/android/status` | -- | `{adb_available, phone_connected, package, activity, battery}` |
+| GET | `/android/info` | -- | Device model, Android version, serial |
+| GET | `/android/ui-dump` | -- | `uiautomator` XML dump |
+| POST | `/android/tap` | `{x, y}` | Tap at coordinates |
+| POST | `/android/swipe` | `{x1, y1, x2, y2, dur}` | Swipe gesture |
+| POST | `/android/type` | `{text}` | Type text |
+| POST | `/android/key` | `{keycode}` | Key event (KEYCODE_HOME, KEYCODE_BACK, etc.) |
+| POST | `/android/shell` | `{cmd}` | Arbitrary `adb shell` command |
+| POST | `/android/launch` | `{pkg}` | Launch app by package name |
+| POST | `/android/install` | `{apkPath}` | Install APK from local path |
+| POST | `/android/push` | `{local, remote}` | Push file to device |
+| POST | `/android/pull` | `{remote, local}` | Pull file from device |
+| POST | `/android/record` | `{seconds}` | Record screen, returns MP4 path |
+
 ---
 
 ## AI Integration
@@ -273,6 +298,8 @@ The **Browser Control** skill auto-activates when you mention browsing, websites
 | `HUMANAIE_DATA_DIR` | `.` (cwd) | Data directory for history, highlights, sessions |
 | `HUMANAIE_USER` | (empty) | Basic auth username |
 | `HUMANAIE_PASS` | (empty) | Basic auth password |
+| `HUMANAIE_PHONE_IP` | (empty) | Android phone IP for WiFi ADB (e.g., `192.168.1.42`) |
+| `HUMANAIE_PHONE_PORT` | `5555` | Port for WiFi ADB |
 
 ---
 
