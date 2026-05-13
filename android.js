@@ -234,7 +234,74 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // (Subsequent tasks add /shell, /launch, /install, /push, /pull, /record here.)
+  function execFileAsync(file, args, opts) {
+    return new Promise((resolve, reject) => {
+      execFile(file, args, opts || {}, (err, stdout) => err ? reject(err) : resolve(stdout));
+    });
+  }
+
+  router.post('/shell', async (req, res) => {
+    const { cmd } = req.body || {};
+    if (!cmd) return res.status(400).json({ error: 'cmd required' });
+    try {
+      const out = await adbAsync('shell', cmd);
+      res.json({ ok: true, output: out.toString() });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/launch', async (req, res) => {
+    const { pkg } = req.body || {};
+    if (!pkg) return res.status(400).json({ error: 'pkg required' });
+    try {
+      await adbAsync('shell', `monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/install', async (req, res) => {
+    const { apkPath } = req.body || {};
+    if (!apkPath) return res.status(400).json({ error: 'apkPath required' });
+    if (!fs.existsSync(apkPath)) return res.status(400).json({ error: 'APK file not found' });
+    try {
+      await adbAsync('install', '-r', apkPath);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/push', async (req, res) => {
+    const { local, remote } = req.body || {};
+    if (!local || !remote) return res.status(400).json({ error: 'local,remote required' });
+    try {
+      await adbAsync('push', local, remote);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/pull', async (req, res) => {
+    const { remote, local } = req.body || {};
+    if (!remote || !local) return res.status(400).json({ error: 'remote,local required' });
+    try {
+      await adbAsync('pull', remote, local);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  router.post('/record', async (req, res) => {
+    const seconds = Math.max(1, Math.min(180, (req.body && req.body.seconds) || 30));
+    const sessionsDir = path.join(process.env.HUMANAIE_DATA_DIR || process.cwd(), 'humanaie-sessions');
+    try { fs.mkdirSync(sessionsDir, { recursive: true }); } catch {}
+    const id = `android-${Date.now()}`;
+    const remotePath = `/sdcard/${id}.mp4`;
+    const localPath = path.join(sessionsDir, `${id}.mp4`);
+    try {
+      await execFileAsync(adbPath,
+        ['-s', SERIAL_REF.current, 'shell', `screenrecord --time-limit ${seconds} ${remotePath}`],
+        { timeout: (seconds + 10) * 1000, maxBuffer: 1024 * 1024 });
+      await adbAsync('pull', remotePath, localPath);
+      await adbAsync('shell', `rm ${remotePath}`).catch(() => {});
+      res.json({ ok: true, path: localPath, id, target: 'android' });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
   // Export helpers used by later tasks
   module.exports.adbAsync = adbAsync;
