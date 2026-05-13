@@ -45,3 +45,29 @@ test('GET /android/screenshot returns 503 when ADB is unavailable', async (t) =>
   const body = await res.json();
   assert.match(body.error || '', /ADB not configured/);
 });
+
+test('POST /android/tap returns 400 on missing coords (when ADB available)', async (t) => {
+  const { ADB_AVAILABLE } = require('../android');
+  if (!ADB_AVAILABLE) { t.skip('Validation only runs with ADB available; 503 covered by separate test'); return; }
+
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13335' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('boot timeout')), 5000);
+    proc.stdout.on('data', (c) => {
+      if (c.toString().toLowerCase().includes('listening')) { clearTimeout(timer); resolve(); }
+    });
+  });
+
+  const res = await fetch('http://127.0.0.1:13335/android/tap', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.strictEqual(res.status, 400);
+});
