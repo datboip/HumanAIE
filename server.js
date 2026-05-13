@@ -1036,18 +1036,20 @@ app.use('/cam', express.static(path.join(__dirname, 'public', 'cam')));
 
 const PORT = process.env.HUMANAIE_PORT || process.env.PORT || '3333';
 app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`HumanAIE running at http://0.0.0.0:${PORT}`);
-  // Retry browser init up to 5 times before giving up
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      await initBrowser();
-      break;
-    } catch(e) {
-      console.error(`[startup] Browser init attempt ${attempt}/5 failed:`, e.message);
-      if (attempt === 5) {
-        console.error('[startup] All browser init attempts failed — server running without browser');
-      } else {
-        await new Promise(r => setTimeout(r, 3000 * attempt));
+  console.log(`Listening on port ${PORT} — HumanAIE running at http://0.0.0.0:${PORT}`);
+  if (process.env.HUMANAIE_TEST_NO_BROWSER !== '1') {
+    // Retry browser init up to 5 times before giving up
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await initBrowser();
+        break;
+      } catch(e) {
+        console.error(`[startup] Browser init attempt ${attempt}/5 failed:`, e.message);
+        if (attempt === 5) {
+          console.error('[startup] All browser init attempts failed — server running without browser');
+        } else {
+          await new Promise(r => setTimeout(r, 3000 * attempt));
+        }
       }
     }
   }
