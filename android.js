@@ -84,6 +84,32 @@ if (!ADB_AVAILABLE) {
     });
   }
 
+  // ── Frame cache — background screencap loop, shared by /screenshot and /stream ─
+  let frameCache = null;
+  const MJPEG_CLIENTS = new Set();
+  const BOUNDARY = 'frame';
+
+  function pushFrame(buf) {
+    if (!buf || buf.length < 1000) return;
+    frameCache = buf;
+    const header = `--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${buf.length}\r\n\r\n`;
+    for (const client of MJPEG_CLIENTS) {
+      try { client.write(header); client.write(buf); client.write('\r\n'); }
+      catch { MJPEG_CLIENTS.delete(client); }
+    }
+  }
+
+  (async function captureLoop() {
+    while (true) {
+      try {
+        const buf = execFileSync(adbPath, ['-s', SERIAL_REF.current, 'exec-out', 'screencap', '-p'],
+          { timeout: 10000, maxBuffer: 20 * 1024 * 1024 });
+        if (buf && buf.length > 1000) pushFrame(buf);
+      } catch { /* phone offline, emulator rebooting, etc. */ }
+      await new Promise(r => setTimeout(r, 80)); // ~12fps
+    }
+  })();
+
   // ── Routes: tap, swipe, type, key ──────────────────────────────────────────
   router.post('/tap', async (req, res) => {
     const { x, y } = req.body || {};
@@ -128,7 +154,15 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // (Subsequent tasks add frame loop, /screenshot, /stream, /status, /info, /ui-dump, /shell, /launch, /install, /push, /pull, /record here.)
+  router.get('/screenshot', (req, res) => {
+    if (!frameCache) return res.status(503).json({ error: 'No frame yet — phone may be offline' });
+    const isJpeg = frameCache[0] === 0xFF && frameCache[1] === 0xD8;
+    res.set('Content-Type', isJpeg ? 'image/jpeg' : 'image/png');
+    res.set('Cache-Control', 'no-cache');
+    res.send(frameCache);
+  });
+
+  // (Subsequent tasks add /stream, /status, /info, /ui-dump, /shell, /launch, /install, /push, /pull, /record here.)
 
   // Export helpers used by later tasks
   module.exports.adbAsync = adbAsync;
