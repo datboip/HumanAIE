@@ -824,21 +824,39 @@ app.get('/highlight-history', (req, res) => {
     const lines = fs.readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
     let entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
 
+    // Backwards-compat: entries without `target` are browser entries.
+    entries = entries.map(e => ({ target: e.target || 'browser', ...e }));
+
     const url = req.query.url || null;
     const q = req.query.q || null;
+    const pkg = req.query.package || null;
+    const activity = req.query.activity || null;
+    const target = req.query.target || null;
 
+    if (target) entries = entries.filter(e => e.target === target);
     if (url) entries = entries.filter(e => e.url && e.url.includes(url));
-    if (q) entries = entries.filter(e => (e.label || '').toLowerCase().includes(q.toLowerCase()) || (e.url || '').toLowerCase().includes(q.toLowerCase()));
+    if (pkg) entries = entries.filter(e => e.package === pkg);
+    if (activity) entries = entries.filter(e => e.activity === activity);
+    if (q) entries = entries.filter(e =>
+      (e.label || '').toLowerCase().includes(q.toLowerCase()) ||
+      (e.url || '').toLowerCase().includes(q.toLowerCase()) ||
+      (e.package || '').toLowerCase().includes(q.toLowerCase())
+    );
 
-    // Group by URL for easy lookup
     const byUrl = {};
+    const byPackage = {};
     entries.forEach(e => {
-      const domain = e.url ? new URL(e.url).hostname : 'unknown';
-      if (!byUrl[domain]) byUrl[domain] = [];
-      byUrl[domain].push({ x: e.x, y: e.y, label: e.label, url: e.url, time: e.timestamp || e.time });
+      if (e.target === 'android' && e.package) {
+        if (!byPackage[e.package]) byPackage[e.package] = [];
+        byPackage[e.package].push({ x: e.x, y: e.y, label: e.label, activity: e.activity, time: e.timestamp || e.time });
+      } else if (e.url) {
+        const domain = (() => { try { return new URL(e.url).hostname; } catch { return 'unknown'; } })();
+        if (!byUrl[domain]) byUrl[domain] = [];
+        byUrl[domain].push({ x: e.x, y: e.y, label: e.label, url: e.url, time: e.timestamp || e.time });
+      }
     });
 
-    res.json({ history: entries.slice(-50), byUrl, total: entries.length });
+    res.json({ history: entries.slice(-50), byUrl, byPackage, total: entries.length });
   } catch(e) { res.json({ history: [], error: e.message }); }
 });
 
