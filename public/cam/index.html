@@ -572,6 +572,22 @@
     <button class="nav-btn" id="go-btn" onclick="navigate()">Go</button>
   </div>
 
+  <!-- Android control bar (shown only in Android mode) -->
+  <div id="android-controls" style="display:none; padding:4px 8px; background:#c0c0c0; border-bottom:1px solid #808080;">
+    <button id="ac-back" title="Back">&#9664;</button>
+    <button id="ac-home" title="Home">&#9679;</button>
+    <button id="ac-recent" title="Recent apps">&#9634;</button>
+    <span style="margin:0 12px;">|</span>
+    <select id="android-app-launcher">
+      <option value="">App &#9662;</option>
+      <option value="com.android.settings">Settings</option>
+      <option value="com.android.chrome">Chrome</option>
+      <option value="com.whatsapp">WhatsApp</option>
+    </select>
+    <button id="ac-reconnect" title="Reconnect">&#10227;</button>
+    <span id="android-status-text" style="margin-left:12px; font-size:11px; color:#444;">&#8212;</span>
+  </div>
+
   <!-- Tab bar -->
   <div id="tabbar">
     <button id="new-tab-btn" onclick="newTab()" title="New Tab">+</button>
@@ -634,6 +650,16 @@
     </div>
     <img id="viewport" alt="Browser viewport">
     <div id="ai-cursor"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="cursor-stroke" d="M3 1L21 12L12.5 13.5L8.5 22L3 1Z" stroke-width="0"/><path class="cursor-fill" d="M5 4L18 12L12 13.2L8.8 20L5 4Z"/></svg></div>
+
+    <!-- Android splash overlay (covers viewport-wrapper when phone not connected) -->
+    <div id="android-splash" style="display:none; position:absolute; inset:0; background:rgba(192,192,192,0.95); align-items:center; justify-content:center; flex-direction:column; text-align:center; font-family: 'Times New Roman', serif; z-index:10;">
+      <div style="border:2px solid #808080; background:#fff; padding:24px 32px; max-width:360px;">
+        <div style="font-size:48px;">&#128241;</div>
+        <h2 id="android-splash-title" style="margin:8px 0; color:#000080;">NO PHONE</h2>
+        <p id="android-splash-body" style="font-size:13px; color:#333;">Phone not paired yet.</p>
+        <button id="splash-reconnect" style="margin-top:12px; padding:4px 16px;">RECONNECT</button>
+      </div>
+    </div>
 
   </div>
 
@@ -1098,6 +1124,86 @@
 
   document.getElementById('phone-tab').addEventListener('click', switchToAndroidMode);
 
+  // ---- Android status, controls, and splash ----
+  var androidStatus = { adb_available: false, phone_connected: false };
+  var androidStatusTimer = null;
+
+  async function androidKey(keycode) {
+    try {
+      await fetch('/android/key', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keycode: keycode }),
+      });
+    } catch (e) { console.warn('android key failed', e); }
+  }
+
+  async function launchAndroidApp(pkg) {
+    if (!pkg) return;
+    try {
+      await fetch('/android/launch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pkg: pkg }),
+      });
+    } catch (e) { console.warn('android launch failed', e); }
+    var sel = document.getElementById('android-app-launcher');
+    if (sel) sel.value = '';
+  }
+
+  async function refreshAndroidStatus() {
+    try {
+      var r = await fetch('/android/status');
+      androidStatus = await r.json();
+    } catch (e) { androidStatus = { adb_available: false, phone_connected: false }; }
+
+    var ind = document.getElementById('phone-tab-indicator');
+    if (ind) {
+      if (!androidStatus.adb_available) ind.dataset.state = 'no-adb';
+      else if (androidStatus.phone_connected) ind.dataset.state = 'connected';
+      else ind.dataset.state = 'disconnected';
+    }
+
+    var splash = document.getElementById('android-splash');
+    if (splash) {
+      if (androidMode && !androidStatus.phone_connected) {
+        splash.style.display = 'flex';
+        var title = document.getElementById('android-splash-title');
+        var body = document.getElementById('android-splash-body');
+        // textContent only — never innerHTML.
+        if (!androidStatus.adb_available) {
+          if (title) title.textContent = 'NO ADB';
+          if (body) body.textContent = 'ADB is not installed on the server. Install with: apt install adb';
+        } else {
+          if (title) title.textContent = 'NO PHONE';
+          if (body) body.textContent = 'Phone not paired. Set HUMANAIE_PHONE_IP and restart, or check WiFi ADB.';
+        }
+      } else {
+        splash.style.display = 'none';
+      }
+    }
+
+    var txt = document.getElementById('android-status-text');
+    if (txt) {
+      if (!androidStatus.adb_available) txt.textContent = 'ADB not installed';
+      else if (!androidStatus.phone_connected) txt.textContent = 'Phone offline';
+      else {
+        var batt = androidStatus.battery == null ? '?' : androidStatus.battery + '%';
+        txt.textContent = (androidStatus.package || '?') + ' — battery ' + batt;
+      }
+    }
+  }
+
+  document.getElementById('ac-back').addEventListener('click', function() { androidKey('KEYCODE_BACK'); });
+  document.getElementById('ac-home').addEventListener('click', function() { androidKey('KEYCODE_HOME'); });
+  document.getElementById('ac-recent').addEventListener('click', function() { androidKey('KEYCODE_APP_SWITCH'); });
+  document.getElementById('ac-reconnect').addEventListener('click', refreshAndroidStatus);
+  document.getElementById('splash-reconnect').addEventListener('click', refreshAndroidStatus);
+  document.getElementById('android-app-launcher').addEventListener('change', function(e) { launchAndroidApp(e.target.value); });
+
+  androidStatusTimer = setInterval(refreshAndroidStatus, 5000);
+  refreshAndroidStatus();
+
   window.newTab = function() {
     apiPost('/tabs/new', { url: 'about:blank' }).then(function(d) {
       if (d && d.id) {
@@ -1152,7 +1258,9 @@
       var label = state.waitforActive ? state.waitforMessage : 'Point ' + (state.highlights.length + 1);
 
       addHighlightDot(coords.screenX, coords.screenY, x, y, label);
-      apiPost('/highlight', { x: x, y: y, label: label });
+      apiPost('/highlight', androidMode
+        ? { x: x, y: y, label: label, target: 'android', package: (androidStatus.package || ''), activity: (androidStatus.activity || '') }
+        : { x: x, y: y, label: label });
 
       // If answering a waitfor, one click is enough — turn off highlight mode
       if (state.waitforActive) {
