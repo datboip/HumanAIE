@@ -554,47 +554,68 @@
   #control-indicator.ai { background: #d0d0ff; color: #000080; }
   #control-indicator.human { background: #ffd0d0; color: #800000; }
 
-  /* ---- Handroid (Android target) — control bar + splash ---- */
-  #android-controls {
+  /* ---- Handroid side panels — flank the phone stream in viewport letterbox ---- */
+  #android-side-left,
+  #android-side-right {
     display: none;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 8px;
     background: var(--bg);
-    border-bottom: 2px groove var(--shadow);
+    border: 2px outset var(--bg);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
   }
-  #android-controls.shown { display: flex; }
-  #android-controls .nav-btn {
-    min-width: 28px;
-    height: 24px;
-    padding: 0 6px;
-    font-size: 14px;
+  #android-side-left.shown,
+  #android-side-right.shown { display: flex; }
+  #android-side-left  { left: 16px; }
+  #android-side-right { right: 16px; min-width: 72px; }
+
+  .ac-side-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    font-size: 18px;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  #android-controls .ac-divider {
-    color: var(--shadow);
-    user-select: none;
-    margin: 0 2px;
-  }
-  #android-app-launcher {
+
+  #android-side-right select {
+    width: 100%;
     border: 2px inset var(--shadow);
     background: var(--url-bg);
     font-family: inherit;
-    font-size: 12px;
+    font-size: 11px;
     padding: 2px 4px;
     color: var(--text);
-    height: 24px;
+    height: 28px;
   }
-  #android-status-text {
-    margin-left: auto;
+
+  #android-status-bar {
+    display: none;
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    background: rgba(0, 0, 0, 0.65);
+    color: #d0d0a0;
     font-family: 'Courier New', monospace;
     font-size: 11px;
-    color: var(--dark-shadow);
+    padding: 4px 12px;
+    border: 1px inset #505060;
+    letter-spacing: 0.5px;
     white-space: nowrap;
+    max-width: 60%;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 240px;
   }
+  #android-status-bar.shown { display: block; }
 
   /* Handroid splash — same vibe as #splash (dark viewport-wrapper bg, glow title, outset panel)
      but tinted green to match the HANDROID tab color. */
@@ -696,21 +717,6 @@
     <button class="nav-btn" id="go-btn" onclick="navigate()">Go</button>
   </div>
 
-  <!-- Android control bar (shown only in Android mode) -->
-  <div id="android-controls">
-    <button class="nav-btn" id="ac-back" title="Back">&#9664;</button>
-    <button class="nav-btn" id="ac-home" title="Home">&#9679;</button>
-    <button class="nav-btn" id="ac-recent" title="Recent apps">&#9634;</button>
-    <span class="ac-divider">|</span>
-    <select id="android-app-launcher">
-      <option value="">&#9662; Launch app...</option>
-      <option value="com.android.settings">Settings</option>
-      <option value="com.android.chrome">Chrome</option>
-      <option value="com.whatsapp">WhatsApp</option>
-    </select>
-    <button class="nav-btn" id="ac-reconnect" title="Reconnect">&#10227;</button>
-    <span id="android-status-text">&#8212;</span>
-  </div>
 
   <!-- Tab bar -->
   <div id="tabbar">
@@ -774,6 +780,23 @@
     </div>
     <img id="viewport" alt="Browser viewport">
     <div id="ai-cursor"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="cursor-stroke" d="M3 1L21 12L12.5 13.5L8.5 22L3 1Z" stroke-width="0"/><path class="cursor-fill" d="M5 4L18 12L12 13.2L8.8 20L5 4Z"/></svg></div>
+
+    <!-- Handroid side panels — flank the phone stream when Handroid tab is active + phone connected. -->
+    <div id="android-side-left">
+      <button class="nav-btn ac-side-btn" id="ac-back" title="Back">&#9664;</button>
+      <button class="nav-btn ac-side-btn" id="ac-home" title="Home">&#9679;</button>
+      <button class="nav-btn ac-side-btn" id="ac-recent" title="Recent apps">&#9634;</button>
+    </div>
+    <div id="android-side-right">
+      <select id="android-app-launcher" title="Launch app">
+        <option value="">&#9662; App</option>
+        <option value="com.android.settings">Settings</option>
+        <option value="com.android.chrome">Chrome</option>
+        <option value="com.whatsapp">WhatsApp</option>
+      </select>
+      <button class="nav-btn ac-side-btn" id="ac-reconnect" title="Reconnect">&#10227;</button>
+    </div>
+    <div id="android-status-bar"><span id="android-status-text">&#8212;</span></div>
 
     <!-- Handroid splash overlay (covers viewport-wrapper when phone not connected).
          Mirrors the structure of #splash above (brand at top, panel below) but tinted green. -->
@@ -1243,13 +1266,9 @@
     document.getElementById('phone-tab').classList.add('active');
     document.querySelectorAll('.tab:not(.phone-tab).active').forEach(function(el) { el.classList.remove('active'); });
     if ($viewport) $viewport.src = '/android/stream?t=' + Date.now();
-    // Browser nav controls (back/forward/reload/home/stop/url) don't apply to a phone — hide the whole navbar.
-    var navbar = document.getElementById('navbar');
-    if (navbar) navbar.style.display = 'none';
+    // Keep the browser navbar visible — Handroid is a tab, not a mode. Phone-specific controls live in side panels.
     var browserSplash = document.getElementById('splash');
     if (browserSplash) browserSplash.style.display = 'none';
-    var ac = document.getElementById('android-controls');
-    if (ac) ac.classList.add('shown');
     if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus();
   }
 
@@ -1257,12 +1276,10 @@
     androidMode = false;
     document.getElementById('phone-tab').classList.remove('active');
     if ($viewport) $viewport.src = '/stream?t=' + Date.now();
-    var navbar = document.getElementById('navbar');
-    if (navbar) navbar.style.display = '';
-    var ac = document.getElementById('android-controls');
-    if (ac) ac.classList.remove('shown');
-    var splash = document.getElementById('android-splash');
-    if (splash) splash.classList.remove('shown');
+    ['android-side-left', 'android-side-right', 'android-status-bar', 'android-splash'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('shown');
+    });
   }
 
   document.getElementById('phone-tab').addEventListener('click', switchToAndroidMode);
@@ -1308,8 +1325,16 @@
     }
 
     var splash = document.getElementById('android-splash');
+    var sideLeft = document.getElementById('android-side-left');
+    var sideRight = document.getElementById('android-side-right');
+    var statusBar = document.getElementById('android-status-bar');
+    var showSidePanels = androidMode && androidStatus.phone_connected;
+    var showSplash = androidMode && !androidStatus.phone_connected;
+    if (sideLeft)  sideLeft.classList.toggle('shown', showSidePanels);
+    if (sideRight) sideRight.classList.toggle('shown', showSidePanels);
+    if (statusBar) statusBar.classList.toggle('shown', showSidePanels);
     if (splash) {
-      if (androidMode && !androidStatus.phone_connected) {
+      if (showSplash) {
         splash.classList.add('shown');
         var statusEl = document.getElementById('android-splash-status');
         var body = document.getElementById('android-splash-body');
