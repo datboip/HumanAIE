@@ -639,42 +639,44 @@
   /* Phone settings section hidden when not in Handroid mode */
   body:not(.android-mode) .phone-settings-section { display: none; }
 
-  /* Controls popup — fixed size so Keyboard/Touch tab switch never resizes the popup.
-     Width is wide enough for the 5-button keyboard row; min-height is tall enough for
-     whichever pane is taller. Tabs structurally mirror each other (row of 5 + arrow grid
-     + section + 2x2 grid + hint) so they fit the same envelope. */
-  #controls-popup {
-    width: 260px;
-    box-sizing: border-box;
+  /* Controls popup — pane stack uses CSS grid so both panes occupy the same cell.
+     The hidden pane stays in layout via visibility:hidden, so popup is sized to fit
+     the LARGER pane and never changes when you switch tabs. */
+  #controls-popup .control-pane-stack {
+    display: grid;
   }
   #controls-popup .control-tab-pane {
-    min-height: 230px;
+    grid-area: 1 / 1;
   }
+  #controls-popup .control-tab-pane[hidden] {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  /* Slim tab strip — same vertical footprint as the original "Keyboard" popup-title was,
+     so adding tabs doesn't grow the popup's height. */
   #controls-popup .control-tabs {
     display: flex;
     gap: 0;
-    margin: -2px -2px 8px;
-    border-bottom: 2px solid var(--shadow);
+    margin-bottom: 4px;
   }
   #controls-popup .control-tab {
     flex: 1;
-    height: 26px;
-    padding: 0 8px;
+    height: 20px;
+    padding: 0 6px;
     font-size: 11px;
     font-family: inherit;
     background: var(--tab-inactive);
     border: 1px solid var(--shadow);
-    border-bottom: none;
     color: var(--text);
     cursor: pointer;
+    line-height: 1;
   }
   #controls-popup .control-tab.active {
     background: var(--tab-active);
     font-weight: bold;
-    box-shadow: inset 0 -3px 0 var(--accent-yellow);
+    box-shadow: inset 0 -2px 0 var(--accent-yellow);
   }
   #controls-popup .control-tab:hover { background: #b8b8b8; }
-  #controls-popup .control-tab-pane[hidden] { display: none; }
   body:not(.android-mode) .touch-tab-only { display: none; }
 
   /* Handroid splash — same vibe as #splash (dark viewport-wrapper bg, glow title, outset panel)
@@ -893,62 +895,64 @@
     <!-- Popup trigger buttons -->
     <div class="popup-anchor">
       <button class="nav-btn" onclick="togglePopup('controls-popup', event)" style="min-width:65px;height:28px;font-size:11px;padding:0 8px">⌨ Controls</button>
-      <div id="controls-popup" class="popup-panel">
+      <div id="controls-popup" class="popup-panel" style="min-width:220px">
         <div class="control-tabs">
           <button class="control-tab active" data-tab="keyboard" onclick="switchControlsTab('keyboard')">⌨ Keyboard</button>
           <button class="control-tab touch-tab-only" data-tab="touch" onclick="switchControlsTab('touch')">👆 Touch</button>
         </div>
-
-        <div class="control-tab-pane" data-pane="keyboard">
-          <div class="popup-row">
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Enter')">Enter</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Tab')">Tab</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Escape')">Esc</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Backspace')">Del</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Space')">Space</button>
+        <!-- Both panes share the same grid cell — hidden pane keeps its size reserved
+             so switching tabs NEVER resizes the popup. -->
+        <div class="control-pane-stack">
+          <div class="control-tab-pane" data-pane="keyboard">
+            <div class="popup-row">
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Enter')">Enter</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Tab')">Tab</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Escape')">Esc</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Backspace')">Del</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Space')">Space</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
+              <div></div>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowUp')">▲</button>
+              <div></div>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowLeft')">◀</button>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowDown')">▼</button>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowRight')">▶</button>
+            </div>
+            <div class="popup-title" style="margin-top:6px">Scroll</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+              <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('up', 300)">⬆ Up</button>
+              <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('up', 99999)">⏫ Top</button>
+              <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('down', 300)">⬇ Down</button>
+              <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('down', 99999)">⏬ Btm</button>
+            </div>
+            <div class="popup-hint">✋ Drag mode also scrolls</div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
-            <div></div>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowUp')">▲</button>
-            <div></div>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowLeft')">◀</button>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowDown')">▼</button>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowRight')">▶</button>
+          <div class="control-tab-pane" data-pane="touch" hidden>
+            <div class="popup-row">
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 4px;flex:1" onclick="phoneKey('KEYCODE_POWER')" title="Power">🔒</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 4px;flex:1" onclick="phoneKey('KEYCODE_WAKEUP')" title="Wake">🔆</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 4px;flex:1" onclick="phoneKey('KEYCODE_VOLUME_UP')" title="Vol up">Vol+</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 4px;flex:1" onclick="phoneKey('KEYCODE_VOLUME_DOWN')" title="Vol down">Vol−</button>
+              <button class="nav-btn" style="height:28px;font-size:11px;padding:0 4px;flex:1" onclick="phoneScreenshot()" title="Screenshot">📸</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
+              <div></div>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('up')" title="Swipe up">▲</button>
+              <div></div>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('left')" title="Swipe left">◀</button>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('down')" title="Swipe down">▼</button>
+              <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('right')" title="Swipe right">▶</button>
+            </div>
+            <div class="popup-title" style="margin-top:6px">Gestures</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+              <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('up')">⬆ Home</button>
+              <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="phoneSwipe('down')">⬇ Notif</button>
+              <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('left')">⬅ Back</button>
+              <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="phoneSwipe('right')">➡ Fwd</button>
+            </div>
+            <div class="popup-hint">Click = Tap. Drag = Swipe.</div>
           </div>
-          <div class="popup-title" style="margin-top:6px">Scroll</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
-            <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('up', 300)">⬆ Up</button>
-            <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('up', 99999)">⏫ Top</button>
-            <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('down', 300)">⬇ Down</button>
-            <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('down', 99999)">⏬ Btm</button>
-          </div>
-          <div class="popup-hint">✋ Drag mode also scrolls</div>
-        </div>
-
-        <div class="control-tab-pane" data-pane="touch" hidden>
-          <div class="popup-row">
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="phoneKey('KEYCODE_POWER')">🔒 Power</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="phoneKey('KEYCODE_WAKEUP')">🔆 Wake</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="phoneKey('KEYCODE_VOLUME_UP')">Vol+</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="phoneKey('KEYCODE_VOLUME_DOWN')">Vol−</button>
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="phoneScreenshot()">📸</button>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
-            <div></div>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('up')">▲</button>
-            <div></div>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('left')">◀</button>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('down')">▼</button>
-            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="phoneSwipe('right')">▶</button>
-          </div>
-          <div class="popup-title" style="margin-top:6px">Swipe gesture</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
-            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('up')">⬆ Home</button>
-            <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="phoneSwipe('down')">⬇ Notif</button>
-            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('left')">⬅ Back</button>
-            <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="phoneSwipe('right')">➡ Fwd</button>
-          </div>
-          <div class="popup-hint">Click = Tap. Drag = Swipe.</div>
         </div>
       </div>
     </div>
