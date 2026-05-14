@@ -554,9 +554,8 @@
   #control-indicator.ai { background: #d0d0ff; color: #000080; }
   #control-indicator.human { background: #ffd0d0; color: #800000; }
 
-  /* ---- Handroid side panels — flank the phone stream in viewport letterbox ---- */
-  #android-side-left,
-  #android-side-right {
+  /* ---- Handroid side panel (left) — flanks the phone stream with hardware nav buttons ---- */
+  #android-side-left {
     display: none;
     position: absolute;
     top: 50%;
@@ -568,11 +567,33 @@
     background: var(--bg);
     border: 2px outset var(--bg);
     box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+    left: 16px;
   }
-  #android-side-left.shown,
-  #android-side-right.shown { display: flex; }
-  #android-side-left  { left: 16px; }
-  #android-side-right { right: 16px; min-width: 72px; }
+  #android-side-left.shown { display: flex; }
+
+  /* App switcher — floats at top-right of the viewport, visually hanging from the HANDROID tab. */
+  #android-app-switcher {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 16px;
+    z-index: 5;
+    background: var(--bg);
+    border: 2px outset var(--bg);
+    padding: 4px 6px;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+  }
+  #android-app-switcher.shown { display: block; }
+  #android-app-switcher select {
+    border: 2px inset var(--shadow);
+    background: var(--url-bg);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 4px;
+    color: var(--text);
+    height: 24px;
+    min-width: 120px;
+  }
 
   .ac-side-btn {
     min-width: 44px;
@@ -600,20 +621,17 @@
   #android-status-bar { display: none !important; }
 
   /* Side panel buttons — pill-style "hardware button" feel */
-  #android-side-left .ac-side-btn,
-  #android-side-right .ac-side-btn {
+  #android-side-left .ac-side-btn {
     border-radius: 8px;
     background: linear-gradient(180deg, #d0d0d0 0%, #a0a0a0 100%);
     border: 1px solid #606060;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 2px rgba(0,0,0,0.3);
     color: #202020;
   }
-  #android-side-left .ac-side-btn:hover,
-  #android-side-right .ac-side-btn:hover {
+  #android-side-left .ac-side-btn:hover {
     background: linear-gradient(180deg, #e0e0e0 0%, #b0b0b0 100%);
   }
-  #android-side-left .ac-side-btn:active,
-  #android-side-right .ac-side-btn:active {
+  #android-side-left .ac-side-btn:active {
     background: linear-gradient(180deg, #909090 0%, #b0b0b0 100%);
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
   }
@@ -811,22 +829,21 @@
     <img id="viewport" alt="Browser viewport">
     <div id="ai-cursor"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="cursor-stroke" d="M3 1L21 12L12.5 13.5L8.5 22L3 1Z" stroke-width="0"/><path class="cursor-fill" d="M5 4L18 12L12 13.2L8.8 20L5 4Z"/></svg></div>
 
-    <!-- Handroid side panels — flank the phone stream when Handroid tab is active + phone connected. -->
+    <!-- Handroid left side panel — flanks the phone stream with hardware-like nav buttons. -->
     <div id="android-side-left">
       <button class="nav-btn ac-side-btn" id="ac-back" title="Back">&#9664;</button>
       <button class="nav-btn ac-side-btn" id="ac-home" title="Home">&#9679;</button>
       <button class="nav-btn ac-side-btn" id="ac-recent" title="Recent apps">&#9634;</button>
     </div>
-    <div id="android-side-right">
+    <!-- App switcher — floats at top-right of viewport, hangs from the HANDROID tab. -->
+    <div id="android-app-switcher">
       <select id="android-app-launcher" title="Launch app">
         <option value="">&#9662; App</option>
         <option value="com.android.settings">Settings</option>
         <option value="com.android.chrome">Chrome</option>
         <option value="com.whatsapp">WhatsApp</option>
       </select>
-      <button class="nav-btn ac-side-btn" id="ac-reconnect" title="Reconnect">&#10227;</button>
     </div>
-    <div id="android-status-bar"><span id="android-status-text">&#8212;</span></div>
 
     <!-- Handroid splash overlay (covers viewport-wrapper when phone not connected).
          Mirrors the structure of #splash above (brand at top, panel below) but tinted green. -->
@@ -864,7 +881,7 @@
     <!-- Popup trigger buttons -->
     <div class="popup-anchor">
       <button class="nav-btn" onclick="togglePopup('controls-popup', event)" style="min-width:65px;height:28px;font-size:11px;padding:0 8px">⌨ Controls</button>
-      <div id="controls-popup" class="popup-panel" style="min-width:220px">
+      <div id="controls-popup" class="popup-panel" style="width:240px">
         <div class="control-tabs">
           <button class="control-tab active" data-tab="keyboard" onclick="switchControlsTab('keyboard')">⌨ Keyboard</button>
           <button class="control-tab touch-tab-only" data-tab="touch" onclick="switchControlsTab('touch')">👆 Touch</button>
@@ -986,7 +1003,27 @@
     </div>
 
     <div class="cb-sep"></div>
-    <button class="nav-btn" id="record-btn" onclick="toggleRecording()" style="width:80px;height:28px;font-size:11px;padding:0 8px;text-align:center">⚫ Record</button>
+    <div class="popup-anchor">
+      <button class="nav-btn" id="record-btn" onclick="togglePopup('record-popup', event)" style="width:80px;height:28px;font-size:11px;padding:0 8px;text-align:center">⚫ Record</button>
+      <div id="record-popup" class="popup-panel" style="right:0;left:auto;width:220px">
+        <div class="popup-title" id="record-popup-title">Record what?</div>
+        <div class="popup-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="record-workflow" checked style="cursor:pointer"> Workflow (action steps)
+          </label>
+        </div>
+        <div class="popup-row">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
+            <input type="checkbox" id="record-video" style="cursor:pointer"> Video (MP4 replay)
+          </label>
+        </div>
+        <div class="popup-hint" id="record-popup-status" style="display:none">Recording in progress...</div>
+        <div class="popup-row" style="margin-top:6px">
+          <button class="nav-btn" id="record-start-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="startRecording()">Start</button>
+          <button class="nav-btn" id="record-stop-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1;display:none;color:#fff;background:#cc0000" onclick="stopRecording()">Stop</button>
+        </div>
+      </div>
+    </div>
     <button class="nav-btn" id="takeover-btn" onclick="toggleTakeover()" style="width:100px;height:28px;font-size:11px;padding:0 8px;font-weight:bold;text-align:center">🔴 TAKEOVER</button>
   </div>
 
@@ -1392,7 +1429,7 @@
     document.body.classList.remove('android-mode');
     document.getElementById('phone-tab').classList.remove('active');
     if ($viewport) $viewport.src = '/stream?t=' + Date.now();
-    ['android-side-left', 'android-side-right', 'android-status-bar', 'android-splash'].forEach(function(id) {
+    ['android-side-left', 'android-app-switcher', 'android-splash'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.classList.remove('shown');
     });
@@ -1502,11 +1539,11 @@
 
     var splash = document.getElementById('android-splash');
     var sideLeft = document.getElementById('android-side-left');
-    var sideRight = document.getElementById('android-side-right');
+    var appSwitcher = document.getElementById('android-app-switcher');
     var showSidePanels = androidMode && androidStatus.phone_connected;
     var showSplash = androidMode && !androidStatus.phone_connected;
-    if (sideLeft)  sideLeft.classList.toggle('shown', showSidePanels);
-    if (sideRight) sideRight.classList.toggle('shown', showSidePanels);
+    if (sideLeft) sideLeft.classList.toggle('shown', showSidePanels);
+    if (appSwitcher) appSwitcher.classList.toggle('shown', showSidePanels);
 
     // Inject phone status into the page-level statusbar (#status-text) when Handroid is active.
     // When user switches back to a browser tab, switchToBrowserMode clears it.
@@ -2196,46 +2233,97 @@
   state.recordStartUrl = '';
   var $recordBtn = document.getElementById('record-btn');
 
-  window.toggleRecording = function() {
-    if (state.recording) {
-      // Stop recording
-      state.recording = false;
-      $recordBtn.textContent = '\u26AB Record';
-      $recordBtn.style.color = '';
-      $recordBtn.style.background = '';
+  state.videoRecording = false;
 
-      if (state.recordedActions.length === 0) return;
-
-      // Ask for workflow name
-      var name = prompt('Name this workflow (e.g. "login to example.com"):', '');
-      if (!name) return;
-
-      var workflow = {
-        name: name,
-        startUrl: state.recordStartUrl,
-        domain: (function() { try { return new URL(state.recordStartUrl).hostname; } catch(e) { return ''; } })(),
-        steps: state.recordedActions,
-        recordedAt: new Date().toISOString()
-      };
-
-      // Save to server
-      apiPost('/highlight', {
-        x: 0, y: 0,
-        label: 'WORKFLOW:' + JSON.stringify(workflow)
-      });
-
-      $statusText.textContent = 'Workflow "' + name + '" saved (' + state.recordedActions.length + ' steps)';
-      state.recordedActions = [];
-    } else {
-      // Start recording
-      state.recording = true;
-      state.recordedActions = [];
-      state.recordStartUrl = state.currentUrl || $urlBar.value || '';
+  function refreshRecordPopupUI() {
+    var anyRecording = state.recording || state.videoRecording;
+    var title = document.getElementById('record-popup-title');
+    var status = document.getElementById('record-popup-status');
+    var startBtn = document.getElementById('record-start-btn');
+    var stopBtn = document.getElementById('record-stop-btn');
+    var wfCb = document.getElementById('record-workflow');
+    var vidCb = document.getElementById('record-video');
+    if (anyRecording) {
+      if (title) title.textContent = 'Recording\u2026';
+      if (status) {
+        var bits = [];
+        if (state.recording) bits.push('workflow');
+        if (state.videoRecording) bits.push('video');
+        status.textContent = 'Capturing: ' + bits.join(' + ');
+        status.style.display = '';
+      }
+      if (startBtn) startBtn.style.display = 'none';
+      if (stopBtn) stopBtn.style.display = '';
+      if (wfCb) wfCb.disabled = true;
+      if (vidCb) vidCb.disabled = true;
       $recordBtn.textContent = '\uD83D\uDD34 Stop';
       $recordBtn.style.color = '#fff';
       $recordBtn.style.background = '#cc0000';
-      $statusText.textContent = 'Recording workflow...';
+    } else {
+      if (title) title.textContent = 'Record what?';
+      if (status) status.style.display = 'none';
+      if (startBtn) startBtn.style.display = '';
+      if (stopBtn) stopBtn.style.display = 'none';
+      if (wfCb) wfCb.disabled = false;
+      if (vidCb) vidCb.disabled = false;
+      $recordBtn.textContent = '\u26AB Record';
+      $recordBtn.style.color = '';
+      $recordBtn.style.background = '';
     }
+  }
+
+  window.startRecording = function() {
+    var wf = document.getElementById('record-workflow').checked;
+    var vid = document.getElementById('record-video').checked;
+    if (!wf && !vid) {
+      alert('Select at least one: Workflow or Video.');
+      return;
+    }
+    if (wf) {
+      state.recording = true;
+      state.recordedActions = [];
+      state.recordStartUrl = state.currentUrl || $urlBar.value || '';
+    }
+    if (vid) {
+      state.videoRecording = true;
+      fetch('/record/start', { method: 'POST' }).catch(function(e) { console.warn('video record start failed', e); });
+    }
+    $statusText.textContent = 'Recording ' + (wf && vid ? 'workflow + video' : wf ? 'workflow' : 'video') + '...';
+    refreshRecordPopupUI();
+  };
+
+  window.stopRecording = function() {
+    var hadWorkflow = state.recording;
+    var hadVideo = state.videoRecording;
+
+    if (hadVideo) {
+      state.videoRecording = false;
+      fetch('/record/stop', { method: 'POST' }).catch(function(e) { console.warn('video record stop failed', e); });
+    }
+
+    if (hadWorkflow) {
+      state.recording = false;
+      if (state.recordedActions.length > 0) {
+        var name = prompt('Name this workflow (e.g. "login to example.com"):', '');
+        if (name) {
+          var workflow = {
+            name: name,
+            startUrl: state.recordStartUrl,
+            domain: (function() { try { return new URL(state.recordStartUrl).hostname; } catch(e) { return ''; } })(),
+            steps: state.recordedActions,
+            recordedAt: new Date().toISOString()
+          };
+          apiPost('/highlight', { x: 0, y: 0, label: 'WORKFLOW:' + JSON.stringify(workflow) });
+          $statusText.textContent = 'Workflow "' + name + '" saved (' + state.recordedActions.length + ' steps)';
+        }
+        state.recordedActions = [];
+      }
+    }
+
+    refreshRecordPopupUI();
+    // Close the popup after stopping.
+    var p = document.getElementById('record-popup');
+    if (p) p.classList.remove('open');
   };
 
   function recordAction(action, data) {
