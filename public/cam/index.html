@@ -988,6 +988,13 @@
   }
 
   // ---- Navigation ----
+  window.goHome = function() {
+    // Restore the splash overlay — Home returns to the landing view.
+    showSplash();
+    if ($urlBar) $urlBar.value = '';
+    state.currentUrl = '';
+  };
+
   window.navigate = function() {
     var url = $urlBar.value.trim();
     if (!url) return;
@@ -1236,8 +1243,9 @@
     document.getElementById('phone-tab').classList.add('active');
     document.querySelectorAll('.tab:not(.phone-tab).active').forEach(function(el) { el.classList.remove('active'); });
     if ($viewport) $viewport.src = '/android/stream?t=' + Date.now();
-    var urlBar = document.getElementById('url-bar') || document.querySelector('.url-bar');
-    if (urlBar) urlBar.style.display = 'none';
+    // Browser nav controls (back/forward/reload/home/stop/url) don't apply to a phone — hide the whole navbar.
+    var navbar = document.getElementById('navbar');
+    if (navbar) navbar.style.display = 'none';
     var browserSplash = document.getElementById('splash');
     if (browserSplash) browserSplash.style.display = 'none';
     var ac = document.getElementById('android-controls');
@@ -1249,8 +1257,8 @@
     androidMode = false;
     document.getElementById('phone-tab').classList.remove('active');
     if ($viewport) $viewport.src = '/stream?t=' + Date.now();
-    var urlBar = document.getElementById('url-bar') || document.querySelector('.url-bar');
-    if (urlBar) urlBar.style.display = '';
+    var navbar = document.getElementById('navbar');
+    if (navbar) navbar.style.display = '';
     var ac = document.getElementById('android-controls');
     if (ac) ac.classList.remove('shown');
     var splash = document.getElementById('android-splash');
