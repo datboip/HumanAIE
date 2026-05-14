@@ -553,6 +553,103 @@
   }
   #control-indicator.ai { background: #d0d0ff; color: #000080; }
   #control-indicator.human { background: #ffd0d0; color: #800000; }
+
+  /* ---- Handroid (Android target) — control bar + splash ---- */
+  #android-controls {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--bg);
+    border-bottom: 2px groove var(--shadow);
+  }
+  #android-controls.shown { display: flex; }
+  #android-controls .nav-btn {
+    min-width: 28px;
+    height: 24px;
+    padding: 0 6px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  #android-controls .ac-divider {
+    color: var(--shadow);
+    user-select: none;
+    margin: 0 2px;
+  }
+  #android-app-launcher {
+    border: 2px inset var(--shadow);
+    background: var(--url-bg);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 2px 4px;
+    color: var(--text);
+    height: 24px;
+  }
+  #android-status-text {
+    margin-left: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--dark-shadow);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 240px;
+  }
+
+  #android-splash {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    text-align: center;
+  }
+  #android-splash.shown { display: flex; }
+  #android-splash .splash-panel {
+    border: 2px outset var(--bg);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 24px 36px 20px;
+    max-width: 380px;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.25);
+  }
+  #android-splash .splash-icon {
+    font-size: 56px;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  #android-splash .splash-title {
+    margin: 8px 0 4px;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: var(--text);
+  }
+  #android-splash .splash-body {
+    font-size: 12px;
+    color: var(--dark-shadow);
+    margin: 6px 0 14px;
+    line-height: 1.5;
+  }
+  #android-splash .splash-hint {
+    display: block;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--text);
+    background: var(--url-bg);
+    border: 1px inset var(--shadow);
+    padding: 4px 8px;
+    margin: 0 0 14px;
+    word-break: break-all;
+  }
+  #android-splash .splash-hint:empty { display: none; }
+  #android-splash .nav-btn {
+    min-width: 120px;
+    padding: 4px 16px;
+    font-weight: bold;
+  }
 </style>
 </head>
 <body>
@@ -573,19 +670,19 @@
   </div>
 
   <!-- Android control bar (shown only in Android mode) -->
-  <div id="android-controls" style="display:none; padding:4px 8px; background:#c0c0c0; border-bottom:1px solid #808080;">
-    <button id="ac-back" title="Back">&#9664;</button>
-    <button id="ac-home" title="Home">&#9679;</button>
-    <button id="ac-recent" title="Recent apps">&#9634;</button>
-    <span style="margin:0 12px;">|</span>
+  <div id="android-controls">
+    <button class="nav-btn" id="ac-back" title="Back">&#9664;</button>
+    <button class="nav-btn" id="ac-home" title="Home">&#9679;</button>
+    <button class="nav-btn" id="ac-recent" title="Recent apps">&#9634;</button>
+    <span class="ac-divider">|</span>
     <select id="android-app-launcher">
-      <option value="">App &#9662;</option>
+      <option value="">&#9662; Launch app...</option>
       <option value="com.android.settings">Settings</option>
       <option value="com.android.chrome">Chrome</option>
       <option value="com.whatsapp">WhatsApp</option>
     </select>
-    <button id="ac-reconnect" title="Reconnect">&#10227;</button>
-    <span id="android-status-text" style="margin-left:12px; font-size:11px; color:#444;">&#8212;</span>
+    <button class="nav-btn" id="ac-reconnect" title="Reconnect">&#10227;</button>
+    <span id="android-status-text">&#8212;</span>
   </div>
 
   <!-- Tab bar -->
@@ -652,12 +749,13 @@
     <div id="ai-cursor"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="cursor-stroke" d="M3 1L21 12L12.5 13.5L8.5 22L3 1Z" stroke-width="0"/><path class="cursor-fill" d="M5 4L18 12L12 13.2L8.8 20L5 4Z"/></svg></div>
 
     <!-- Android splash overlay (covers viewport-wrapper when phone not connected) -->
-    <div id="android-splash" style="display:none; position:absolute; inset:0; background:rgba(192,192,192,0.95); align-items:center; justify-content:center; flex-direction:column; text-align:center; font-family: 'Times New Roman', serif; z-index:10;">
-      <div style="border:2px solid #808080; background:#fff; padding:24px 32px; max-width:360px;">
-        <div style="font-size:48px;">&#128241;</div>
-        <h2 id="android-splash-title" style="margin:8px 0; color:#000080;">NO PHONE</h2>
-        <p id="android-splash-body" style="font-size:13px; color:#333;">Phone not paired yet.</p>
-        <button id="splash-reconnect" style="margin-top:12px; padding:4px 16px;">RECONNECT</button>
+    <div id="android-splash">
+      <div class="splash-panel">
+        <div class="splash-icon">&#128241;</div>
+        <div class="splash-title" id="android-splash-title">NO PHONE PAIRED</div>
+        <p class="splash-body" id="android-splash-body">Phone not paired yet.</p>
+        <code class="splash-hint" id="android-splash-hint"></code>
+        <button class="nav-btn" id="splash-reconnect">&#10227; RECONNECT</button>
       </div>
     </div>
 
@@ -1107,8 +1205,10 @@
     if ($viewport) $viewport.src = '/android/stream?t=' + Date.now();
     var urlBar = document.getElementById('url-bar') || document.querySelector('.url-bar');
     if (urlBar) urlBar.style.display = 'none';
+    var browserSplash = document.getElementById('splash');
+    if (browserSplash) browserSplash.style.display = 'none';
     var ac = document.getElementById('android-controls');
-    if (ac) ac.style.display = '';
+    if (ac) ac.classList.add('shown');
     if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus();
   }
 
@@ -1119,7 +1219,9 @@
     var urlBar = document.getElementById('url-bar') || document.querySelector('.url-bar');
     if (urlBar) urlBar.style.display = '';
     var ac = document.getElementById('android-controls');
-    if (ac) ac.style.display = 'none';
+    if (ac) ac.classList.remove('shown');
+    var splash = document.getElementById('android-splash');
+    if (splash) splash.classList.remove('shown');
   }
 
   document.getElementById('phone-tab').addEventListener('click', switchToAndroidMode);
@@ -1167,19 +1269,22 @@
     var splash = document.getElementById('android-splash');
     if (splash) {
       if (androidMode && !androidStatus.phone_connected) {
-        splash.style.display = 'flex';
+        splash.classList.add('shown');
         var title = document.getElementById('android-splash-title');
         var body = document.getElementById('android-splash-body');
+        var hint = document.getElementById('android-splash-hint');
         // textContent only — never innerHTML.
         if (!androidStatus.adb_available) {
-          if (title) title.textContent = 'NO ADB';
-          if (body) body.textContent = 'ADB is not installed on the server. Install with: apt install adb';
+          if (title) title.textContent = 'NO ADB INSTALLED';
+          if (body) body.textContent = 'The HumanAIE server can’t reach Android Debug Bridge.';
+          if (hint) hint.textContent = 'sudo apt install adb';
         } else {
-          if (title) title.textContent = 'NO PHONE';
-          if (body) body.textContent = 'Phone not paired. Set HUMANAIE_PHONE_IP and restart, or check WiFi ADB.';
+          if (title) title.textContent = 'NO PHONE PAIRED';
+          if (body) body.textContent = 'Set HUMANAIE_PHONE_IP and restart the server, or check WiFi ADB on the phone.';
+          if (hint) hint.textContent = 'export HUMANAIE_PHONE_IP=192.168.1.42';
         }
       } else {
-        splash.style.display = 'none';
+        splash.classList.remove('shown');
       }
     }
 
