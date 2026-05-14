@@ -903,7 +903,10 @@ function saveHistory() {
 }
 
 function addToHistory(url, title) {
-  if (!url || url === 'about:blank') return;
+  // Filter blanks. Client sometimes prepends https:// to "about:blank", so match both forms.
+  if (!url) return;
+  const normalized = url.trim().toLowerCase();
+  if (normalized === 'about:blank' || normalized.endsWith('://about:blank')) return;
   browsingHistory.unshift({ url: url, title: title || '', time: new Date().toISOString() });
   if (browsingHistory.length > 500) browsingHistory = browsingHistory.slice(0, 500);
   saveHistory();
