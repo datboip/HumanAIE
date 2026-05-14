@@ -99,6 +99,9 @@ if (!ADB_AVAILABLE) {
     }
   }
 
+  // Capture cadence is configurable via POST /android/config. Lower ms = higher FPS.
+  let captureIntervalMs = 80; // default ~12fps
+
   (async function captureLoop() {
     while (true) {
       try {
@@ -106,9 +109,27 @@ if (!ADB_AVAILABLE) {
           { timeout: 10000, maxBuffer: 20 * 1024 * 1024 });
         if (buf && buf.length > 1000) pushFrame(buf);
       } catch { /* phone offline, emulator rebooting, etc. */ }
-      await new Promise(r => setTimeout(r, 80)); // ~12fps
+      await new Promise(r => setTimeout(r, captureIntervalMs));
     }
   })();
+
+  router.post('/config', (req, res) => {
+    const ms = parseInt(req.body && req.body.captureIntervalMs, 10);
+    if (Number.isNaN(ms) || ms < 16 || ms > 2000) {
+      return res.status(400).json({ error: 'captureIntervalMs must be 16-2000' });
+    }
+    captureIntervalMs = ms;
+    res.json({ ok: true, captureIntervalMs });
+  });
+
+  router.post('/reconnect', async (req, res) => {
+    if (!PHONE_ADDR) return res.status(400).json({ error: 'HUMANAIE_PHONE_IP not set' });
+    try {
+      execFileSync(adbPath, ['connect', PHONE_ADDR], { timeout: 5000 });
+      SERIAL_REF.current = detectSerial();
+      res.json({ ok: true, serial: SERIAL_REF.current });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
   // ── Routes: tap, swipe, type, key ──────────────────────────────────────────
   router.post('/tap', async (req, res) => {

@@ -596,26 +596,56 @@
     height: 28px;
   }
 
-  #android-status-bar {
-    display: none;
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 5;
-    background: rgba(0, 0, 0, 0.65);
-    color: #d0d0a0;
-    font-family: 'Courier New', monospace;
-    font-size: 11px;
-    padding: 4px 12px;
-    border: 1px inset #505060;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
-    max-width: 60%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  /* Phone status now lives in the page-level statusbar (#status-text). The old floating strip is gone. */
+  #android-status-bar { display: none !important; }
+
+  /* Side panel buttons — pill-style "hardware button" feel */
+  #android-side-left .ac-side-btn,
+  #android-side-right .ac-side-btn {
+    border-radius: 8px;
+    background: linear-gradient(180deg, #d0d0d0 0%, #a0a0a0 100%);
+    border: 1px solid #606060;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 2px rgba(0,0,0,0.3);
+    color: #202020;
   }
-  #android-status-bar.shown { display: block; }
+  #android-side-left .ac-side-btn:hover,
+  #android-side-right .ac-side-btn:hover {
+    background: linear-gradient(180deg, #e0e0e0 0%, #b0b0b0 100%);
+  }
+  #android-side-left .ac-side-btn:active,
+  #android-side-right .ac-side-btn:active {
+    background: linear-gradient(180deg, #909090 0%, #b0b0b0 100%);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+  }
+
+  /* Controls popup — tab strip + panes */
+  #controls-popup .control-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--shadow);
+  }
+  #controls-popup .control-tab {
+    flex: 1;
+    height: 26px;
+    padding: 0 8px;
+    font-size: 11px;
+    font-family: inherit;
+    background: var(--tab-inactive);
+    border: 2px outset var(--bg);
+    border-bottom: none;
+    color: var(--text);
+    cursor: pointer;
+  }
+  #controls-popup .control-tab.active {
+    background: var(--tab-active);
+    font-weight: bold;
+  }
+  /* Touch tab is hidden when not in Handroid mode */
+  body:not(.android-mode) .touch-tab-only { display: none; }
+  /* Phone settings section hidden when not in Handroid mode */
+  body:not(.android-mode) .phone-settings-section { display: none; }
+  #controls-popup .control-tab-pane[hidden] { display: none; }
 
   /* Handroid splash — same vibe as #splash (dark viewport-wrapper bg, glow title, outset panel)
      but tinted green to match the HANDROID tab color. */
@@ -835,30 +865,60 @@
     <div class="popup-anchor">
       <button class="nav-btn" onclick="togglePopup('controls-popup', event)" style="min-width:65px;height:28px;font-size:11px;padding:0 8px">⌨ Controls</button>
       <div id="controls-popup" class="popup-panel" style="min-width:220px">
-        <div class="popup-title">Keyboard</div>
-        <div class="popup-row">
-          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Enter')">Enter</button>
-          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Tab')">Tab</button>
-          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Escape')">Esc</button>
-          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Backspace')">Del</button>
-          <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Space')">Space</button>
+        <div class="control-tabs">
+          <button class="control-tab active" data-tab="keyboard" onclick="switchControlsTab('keyboard')">⌨ Keyboard</button>
+          <button class="control-tab touch-tab-only" data-tab="touch" onclick="switchControlsTab('touch')">👆 Touch</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
-          <div></div>
-          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowUp')">▲</button>
-          <div></div>
-          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowLeft')">◀</button>
-          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowDown')">▼</button>
-          <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowRight')">▶</button>
+
+        <div class="control-tab-pane" data-pane="keyboard">
+          <div class="popup-title">Keyboard</div>
+          <div class="popup-row">
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Enter')">Enter</button>
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Tab')">Tab</button>
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Escape')">Esc</button>
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Backspace')">Del</button>
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Space')">Space</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:4px auto;width:120px">
+            <div></div>
+            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowUp')">▲</button>
+            <div></div>
+            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowLeft')">◀</button>
+            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowDown')">▼</button>
+            <button class="nav-btn" style="height:30px;font-size:14px;padding:0" onclick="sendKey('ArrowRight')">▶</button>
+          </div>
+          <div class="popup-title" style="margin-top:6px">Scroll</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+            <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('up', 300)">⬆ Up</button>
+            <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('up', 99999)">⏫ Top</button>
+            <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('down', 300)">⬇ Down</button>
+            <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('down', 99999)">⏬ Btm</button>
+          </div>
+          <div class="popup-hint">✋ Drag mode also scrolls</div>
         </div>
-        <div class="popup-title" style="margin-top:6px">Scroll</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
-          <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('up', 300)">⬆ Up</button>
-          <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('up', 99999)">⏫ Top</button>
-          <button class="nav-btn" style="height:30px;font-size:12px;padding:0" onclick="scrollPage('down', 300)">⬇ Down</button>
-          <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="scrollPage('down', 99999)">⏬ Btm</button>
+
+        <div class="control-tab-pane" data-pane="touch" hidden>
+          <div class="popup-title">Swipe</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('up')">⬆ Up</button>
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('down')">⬇ Down</button>
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('left')">⬅ Left</button>
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('right')">➡ Right</button>
+          </div>
+
+          <div class="popup-title" style="margin-top:6px">System</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneKey('KEYCODE_POWER')">🔒 Power</button>
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneKey('KEYCODE_WAKEUP')">🔆 Wake</button>
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneKey('KEYCODE_VOLUME_UP')">🔊 Vol +</button>
+            <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneKey('KEYCODE_VOLUME_DOWN')">🔉 Vol −</button>
+          </div>
+
+          <div class="popup-title" style="margin-top:6px">Capture</div>
+          <button class="nav-btn" style="height:30px;font-size:11px;padding:0 8px;width:100%" onclick="phoneScreenshot()">📸 Save screenshot</button>
+
+          <div class="popup-hint">Tap = Click mode. Drag = Swipe.</div>
         </div>
-        <div class="popup-hint">✋ Drag mode also scrolls</div>
       </div>
     </div>
 
@@ -900,6 +960,27 @@
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
             <input type="checkbox" id="ripple-toggle" checked onchange="toggleRipple()" style="cursor:pointer"> Show click ripples
           </label>
+        </div>
+
+        <!-- Phone (Handroid) section — only shown when Handroid tab is active. -->
+        <div class="phone-settings-section">
+          <div class="popup-title" style="margin-top:8px;border-top:1px solid var(--shadow);padding-top:8px">Phone (Handroid)</div>
+          <div class="popup-row">
+            <span class="cb-label" style="min-width:60px">FPS:</span>
+            <select id="phone-fps-select" onchange="setPhoneFps(this.value)" style="flex:1;height:26px;border:2px inset var(--shadow);background:var(--url-bg);font-size:11px;font-family:inherit;cursor:pointer">
+              <option value="200">5 fps (low)</option>
+              <option value="83">12 fps</option>
+              <option value="42" selected>24 fps</option>
+              <option value="33">30 fps</option>
+            </select>
+          </div>
+          <div class="popup-row">
+            <span class="cb-label" style="min-width:60px">Phone:</span>
+            <span id="phone-addr-display" style="font-family:'Courier New',monospace;font-size:11px;color:var(--dark-shadow);flex:1">—</span>
+          </div>
+          <div class="popup-row">
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="reconnectPhone()">⟳ Reconnect ADB</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1293,6 +1374,7 @@
 
   function switchToAndroidMode() {
     androidMode = true;
+    document.body.classList.add('android-mode');
     document.getElementById('phone-tab').classList.add('active');
     document.querySelectorAll('.tab:not(.phone-tab).active').forEach(function(el) { el.classList.remove('active'); });
     if ($viewport) {
@@ -1307,6 +1389,7 @@
 
   function switchToBrowserMode() {
     androidMode = false;
+    document.body.classList.remove('android-mode');
     document.getElementById('phone-tab').classList.remove('active');
     if ($viewport) $viewport.src = '/stream?t=' + Date.now();
     ['android-side-left', 'android-side-right', 'android-status-bar', 'android-splash'].forEach(function(id) {
@@ -1344,6 +1427,62 @@
     if (sel) sel.value = '';
   }
 
+  // ---- Controls popup tab switching ----
+  window.switchControlsTab = function(name) {
+    var panes = document.querySelectorAll('#controls-popup .control-tab-pane');
+    panes.forEach(function(p) { p.hidden = (p.dataset.pane !== name); });
+    var tabs = document.querySelectorAll('#controls-popup .control-tab');
+    tabs.forEach(function(t) { t.classList.toggle('active', t.dataset.tab === name); });
+  };
+
+  // ---- Phone touch gestures ----
+  // Canned swipes targeted at the middle of a standard phone resolution (1080x1920ish).
+  // Endpoints clamp/translate as needed.
+  window.phoneSwipe = function(direction) {
+    var coords;
+    switch (direction) {
+      case 'up':    coords = { x1: 540, y1: 1600, x2: 540, y2: 400,  dur: 250 }; break; // home/close
+      case 'down':  coords = { x1: 540, y1: 100,  x2: 540, y2: 1200, dur: 250 }; break; // notifications
+      case 'left':  coords = { x1: 900, y1: 1000, x2: 200, y2: 1000, dur: 200 }; break; // back gesture
+      case 'right': coords = { x1: 200, y1: 1000, x2: 900, y2: 1000, dur: 200 }; break;
+      default: return;
+    }
+    fetch('/android/swipe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(coords),
+    }).catch(function(e) { console.warn('phoneSwipe failed', e); });
+  };
+
+  window.phoneKey = function(keycode) {
+    fetch('/android/key', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ keycode: keycode }),
+    }).catch(function(e) { console.warn('phoneKey failed', e); });
+  };
+
+  window.phoneScreenshot = function() {
+    // Open in a new tab — user can right-click → Save As.
+    window.open('/android/screenshot?t=' + Date.now(), '_blank');
+  };
+
+  // ---- Phone settings ----
+  window.setPhoneFps = function(intervalMs) {
+    fetch('/android/config', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ captureIntervalMs: parseInt(intervalMs, 10) }),
+    }).catch(function(e) { console.warn('setPhoneFps failed', e); });
+  };
+
+  window.reconnectPhone = function() {
+    // Re-runs adb connect on the configured PHONE_IP. Also refreshes status.
+    fetch('/android/reconnect', { method: 'POST' })
+      .catch(function(e) { console.warn('reconnect failed', e); })
+      .finally(function() { if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus(); });
+  };
+
   async function refreshAndroidStatus() {
     if (isMockMode()) {
       androidStatus = { adb_available: true, phone_connected: true, phone_addr: '192.168.1.42:5555', battery: 87, package: 'com.whatsapp', activity: '.HomeActivity' };
@@ -1364,12 +1503,30 @@
     var splash = document.getElementById('android-splash');
     var sideLeft = document.getElementById('android-side-left');
     var sideRight = document.getElementById('android-side-right');
-    var statusBar = document.getElementById('android-status-bar');
     var showSidePanels = androidMode && androidStatus.phone_connected;
     var showSplash = androidMode && !androidStatus.phone_connected;
     if (sideLeft)  sideLeft.classList.toggle('shown', showSidePanels);
     if (sideRight) sideRight.classList.toggle('shown', showSidePanels);
-    if (statusBar) statusBar.classList.toggle('shown', showSidePanels);
+
+    // Inject phone status into the page-level statusbar (#status-text) when Handroid is active.
+    // When user switches back to a browser tab, switchToBrowserMode clears it.
+    if (androidMode) {
+      var statusText = document.getElementById('status-text');
+      if (statusText) {
+        if (androidStatus.phone_connected) {
+          var batt = androidStatus.battery == null ? '?' : androidStatus.battery + '%';
+          var pkg = androidStatus.package || '?';
+          statusText.textContent = '📱 ' + pkg + ' · ' + batt + (androidStatus.phone_addr ? ' · ' + androidStatus.phone_addr : '');
+        } else if (!androidStatus.adb_available) {
+          statusText.textContent = '📱 ADB not configured';
+        } else {
+          statusText.textContent = '📱 Phone offline';
+        }
+      }
+      // Also update the phone-addr display inside Settings.
+      var phoneAddrEl = document.getElementById('phone-addr-display');
+      if (phoneAddrEl) phoneAddrEl.textContent = androidStatus.phone_addr || '(not configured)';
+    }
     if (splash) {
       if (showSplash) {
         splash.classList.add('shown');
