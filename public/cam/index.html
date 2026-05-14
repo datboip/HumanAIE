@@ -1596,12 +1596,17 @@
     }
   }
 
-  document.getElementById('ac-back').addEventListener('click', function() { androidKey('KEYCODE_BACK'); });
-  document.getElementById('ac-home').addEventListener('click', function() { androidKey('KEYCODE_HOME'); });
-  document.getElementById('ac-recent').addEventListener('click', function() { androidKey('KEYCODE_APP_SWITCH'); });
-  document.getElementById('ac-reconnect').addEventListener('click', refreshAndroidStatus);
-  document.getElementById('splash-reconnect').addEventListener('click', refreshAndroidStatus);
-  document.getElementById('android-app-launcher').addEventListener('change', function(e) { launchAndroidApp(e.target.value); });
+  // Bind side-panel button listeners. Guarded so removing any button from the markup
+  // doesn't crash the whole script and break unrelated UI like popups.
+  function bindIf(id, ev, fn) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener(ev, fn);
+  }
+  bindIf('ac-back',     'click',  function() { androidKey('KEYCODE_BACK'); });
+  bindIf('ac-home',     'click',  function() { androidKey('KEYCODE_HOME'); });
+  bindIf('ac-recent',   'click',  function() { androidKey('KEYCODE_APP_SWITCH'); });
+  bindIf('splash-reconnect', 'click', refreshAndroidStatus);
+  bindIf('android-app-launcher', 'change', function(e) { launchAndroidApp(e.target.value); });
 
   androidStatusTimer = setInterval(refreshAndroidStatus, 5000);
   refreshAndroidStatus();
