@@ -1261,11 +1261,44 @@
   // ---- Android / PHONE mode ----
   var androidMode = false;
 
+  // Mock phone screen used when ?mock=1 is set — for layout previews without a real phone.
+  var MOCK_PHONE_SCREEN = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 720">' +
+      '<rect width="360" height="720" fill="#1a2a1a"/>' +
+      '<rect x="0" y="0" width="360" height="32" fill="#0a1a0a"/>' +
+      '<text x="16" y="22" fill="#a0d0a0" font-family="Courier New" font-size="13">9:41</text>' +
+      '<text x="344" y="22" text-anchor="end" fill="#a0d0a0" font-family="Courier New" font-size="13">87%</text>' +
+      '<rect x="0" y="32" width="360" height="48" fill="#2a3a2a"/>' +
+      '<text x="180" y="62" text-anchor="middle" fill="#d0e0d0" font-family="Courier New" font-size="15" font-weight="bold">WhatsApp</text>' +
+      '<rect x="32" y="120" width="220" height="56" rx="8" fill="rgba(255,255,255,0.06)" stroke="#404040"/>' +
+      '<text x="48" y="143" fill="#c0c0c0" font-family="Courier New" font-size="12">Hey, want to grab coffee?</text>' +
+      '<text x="48" y="162" fill="#707070" font-family="Courier New" font-size="10">10:30 AM</text>' +
+      '<rect x="108" y="200" width="220" height="56" rx="8" fill="rgba(0,255,102,0.12)" stroke="#00aa44"/>' +
+      '<text x="124" y="223" fill="#c0e0c0" font-family="Courier New" font-size="12">Yeah, when are you free?</text>' +
+      '<text x="124" y="242" fill="#609060" font-family="Courier New" font-size="10">10:32 AM ✓✓</text>' +
+      '<rect x="32" y="280" width="240" height="56" rx="8" fill="rgba(255,255,255,0.06)" stroke="#404040"/>' +
+      '<text x="48" y="303" fill="#c0c0c0" font-family="Courier New" font-size="12">3pm at the usual spot?</text>' +
+      '<text x="48" y="322" fill="#707070" font-family="Courier New" font-size="10">10:33 AM</text>' +
+      '<text x="180" y="600" text-anchor="middle" fill="#406040" font-family="Courier New" font-size="11">— MOCK PHONE SCREEN —</text>' +
+      '<text x="180" y="618" text-anchor="middle" fill="#406040" font-family="Courier New" font-size="10">?mock=1</text>' +
+      '<rect x="0" y="680" width="360" height="40" fill="#0a1a0a"/>' +
+      '<text x="120" y="704" text-anchor="middle" fill="#a0d0a0" font-family="Courier New" font-size="18">◀</text>' +
+      '<text x="180" y="704" text-anchor="middle" fill="#a0d0a0" font-family="Courier New" font-size="18">●</text>' +
+      '<text x="240" y="704" text-anchor="middle" fill="#a0d0a0" font-family="Courier New" font-size="18">▢</text>' +
+    '</svg>'
+  );
+  function isMockMode() {
+    return new URLSearchParams(window.location.search).get('mock') === '1';
+  }
+
   function switchToAndroidMode() {
     androidMode = true;
     document.getElementById('phone-tab').classList.add('active');
     document.querySelectorAll('.tab:not(.phone-tab).active').forEach(function(el) { el.classList.remove('active'); });
-    if ($viewport) $viewport.src = '/android/stream?t=' + Date.now();
+    if ($viewport) {
+      $viewport.src = isMockMode() ? MOCK_PHONE_SCREEN : '/android/stream?t=' + Date.now();
+      $viewport.classList.add('visible');
+    }
     // Keep the browser navbar visible — Handroid is a tab, not a mode. Phone-specific controls live in side panels.
     var browserSplash = document.getElementById('splash');
     if (browserSplash) browserSplash.style.display = 'none';
@@ -1312,10 +1345,14 @@
   }
 
   async function refreshAndroidStatus() {
-    try {
-      var r = await fetch('/android/status');
-      androidStatus = await r.json();
-    } catch (e) { androidStatus = { adb_available: false, phone_connected: false }; }
+    if (isMockMode()) {
+      androidStatus = { adb_available: true, phone_connected: true, phone_addr: '192.168.1.42:5555', battery: 87, package: 'com.whatsapp', activity: '.HomeActivity' };
+    } else {
+      try {
+        var r = await fetch('/android/status');
+        androidStatus = await r.json();
+      } catch (e) { androidStatus = { adb_available: false, phone_connected: false }; }
+    }
 
     var ind = document.getElementById('phone-tab-indicator');
     if (ind) {
