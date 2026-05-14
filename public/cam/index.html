@@ -639,9 +639,9 @@
   /* Controls popup — tab strip + panes */
   #controls-popup .control-tabs {
     display: flex;
-    gap: 2px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--shadow);
+    gap: 0;
+    margin: -2px -2px 8px;
+    border-bottom: 2px solid var(--shadow);
   }
   #controls-popup .control-tab {
     flex: 1;
@@ -650,7 +650,7 @@
     font-size: 11px;
     font-family: inherit;
     background: var(--tab-inactive);
-    border: 2px outset var(--bg);
+    border: 1px solid var(--shadow);
     border-bottom: none;
     color: var(--text);
     cursor: pointer;
@@ -658,7 +658,9 @@
   #controls-popup .control-tab.active {
     background: var(--tab-active);
     font-weight: bold;
+    box-shadow: inset 0 -3px 0 var(--accent-yellow);
   }
+  #controls-popup .control-tab:hover { background: #b8b8b8; }
   /* Touch tab is hidden when not in Handroid mode */
   body:not(.android-mode) .touch-tab-only { display: none; }
   /* Phone settings section hidden when not in Handroid mode */
@@ -881,14 +883,13 @@
     <!-- Popup trigger buttons -->
     <div class="popup-anchor">
       <button class="nav-btn" onclick="togglePopup('controls-popup', event)" style="min-width:65px;height:28px;font-size:11px;padding:0 8px">⌨ Controls</button>
-      <div id="controls-popup" class="popup-panel" style="width:240px">
+      <div id="controls-popup" class="popup-panel" style="width:260px">
         <div class="control-tabs">
           <button class="control-tab active" data-tab="keyboard" onclick="switchControlsTab('keyboard')">⌨ Keyboard</button>
           <button class="control-tab touch-tab-only" data-tab="touch" onclick="switchControlsTab('touch')">👆 Touch</button>
         </div>
 
         <div class="control-tab-pane" data-pane="keyboard">
-          <div class="popup-title">Keyboard</div>
           <div class="popup-row">
             <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Enter')">Enter</button>
             <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;flex:1" onclick="sendKey('Tab')">Tab</button>
