@@ -2247,19 +2247,58 @@
     var endX = endCoords ? endCoords.x : ps.startVirtualX;
     var endY = endCoords ? endCoords.y : ps.startVirtualY;
 
+    // Rotation guard: if the viewport's natural dimensions changed between
+    // pointerdown and pointerup (i.e. the phone rotated mid-gesture), abort
+    // any swipe. A missed swipe is better than a wildly wrong one.
+    var rotated = (
+      $viewport.naturalWidth  !== ps.startNaturalW ||
+      $viewport.naturalHeight !== ps.startNaturalH
+    );
+
     // Highlight mode handled in the simple-click branch below — the early-return in
     // pointerdown means highlight mode falls through to the legacy click flow.
 
     if (state.interactionMode === 'drag') {
       if (ps.dragged) {
-        // Drag in drag-mode → scroll
-        apiPost('/live/scroll', {
-          direction: (endY < ps.startVirtualY) ? 'down' : 'up',
-          amount: Math.abs(endY - ps.startVirtualY),
-        });
+        // Drag in drag-mode → swipe (android) or scroll (browser)
+        if (androidMode) {
+          if (rotated) return;
+          var startP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
+          var endP   = screenToPhone(e);
+          if (!startP || !endP) return;
+          var dur = e.timeStamp - ps.startTime;
+          if (dur < 100) dur = 100; else if (dur > 1000) dur = 1000;
+          recordAction('swipe', { x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur });
+          fetch('/android/swipe', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur }),
+          }).catch(function(err) { console.warn('android swipe failed', err); });
+        } else {
+          // Browser-mode: drag → scroll
+          apiPost('/live/scroll', {
+            direction: (endY < ps.startVirtualY) ? 'down' : 'up',
+            amount: Math.abs(endY - ps.startVirtualY),
+          });
+        }
       } else {
-        // No movement in drag-mode → treat as click (existing behavior)
-        apiPost('/live/click', { x: ps.startVirtualX, y: ps.startVirtualY });
+        // No movement in drag-mode → treat as tap/click at start coords
+        var rect = $viewport.getBoundingClientRect();
+        showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human');
+        if (androidMode) {
+          var tapP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
+          if (!tapP) return;
+          recordAction('tap', { x: tapP.x, y: tapP.y });
+          fetch('/android/tap', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ x: tapP.x, y: tapP.y }),
+          }).catch(function(err) { console.warn('android tap failed', err); });
+        } else {
+          // Browser-mode: no-movement in drag-mode → click at start coords
+          recordAction('click', { x: ps.startVirtualX, y: ps.startVirtualY });
+          apiPost('/live/click', { x: ps.startVirtualX, y: ps.startVirtualY });
+        }
       }
     } else if (state.interactionMode === 'click') {
       // Click-mode → tap at release coord. Drags in click-mode are silently
@@ -2267,10 +2306,21 @@
       // suppressed by drag); this prevents accidental clicks once touch input
       // is involved.
       if (!ps.dragged) {
-        var rect = $viewport.getBoundingClientRect();
-        showClickEffect(e.clientX - rect.left, e.clientY - rect.top, 'human');
-        recordAction('click', { x: endX, y: endY });
-        apiPost('/live/click', { x: endX, y: endY });
+        var rect2 = $viewport.getBoundingClientRect();
+        showClickEffect(e.clientX - rect2.left, e.clientY - rect2.top, 'human');
+        if (androidMode) {
+          var clickP = screenToPhone(e);
+          if (!clickP) return;
+          recordAction('tap', { x: clickP.x, y: clickP.y });
+          fetch('/android/tap', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ x: clickP.x, y: clickP.y }),
+          }).catch(function(err) { console.warn('android tap failed', err); });
+        } else {
+          recordAction('click', { x: endX, y: endY });
+          apiPost('/live/click', { x: endX, y: endY });
+        }
       }
     }
     // (Note: if interactionMode changed to 'highlight' mid-gesture, both
