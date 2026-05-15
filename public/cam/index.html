@@ -2191,7 +2191,7 @@
   // ---- Unified pointer handler for the viewport ----
   // One state machine handles tap-vs-drag and dispatches to the right endpoint
   // based on interactionMode (and androidMode — added in a later commit).
-  var pointerState = null;  // { id, startX, startY, startNaturalW, startNaturalH, startTime, dragged }
+  var pointerState = null;  // { id, startClientX, startClientY, startVirtualX, startVirtualY, startNaturalW, startNaturalH, startTime, dragged }
   var DRAG_THRESHOLD_PX = 5;
 
   $viewport.addEventListener('pointerdown', function(e) {
@@ -2201,6 +2201,10 @@
     $viewport.setPointerCapture(e.pointerId);
     var coords = screenToVirtual(e);
     if (!coords) return;
+    // pointerState stashes both client-px AND virtual coords plus naturalW/H
+    // and a timestamp. Most fields are unused by Task 4's dispatch — they're
+    // here for Task 5's android-mode tap/swipe (rotation guard, screenToPhone
+    // mapping of start point, natural swipe-duration).
     pointerState = {
       id: e.pointerId,
       startClientX: e.clientX,
@@ -2258,12 +2262,20 @@
         apiPost('/live/click', { x: ps.startVirtualX, y: ps.startVirtualY });
       }
     } else if (state.interactionMode === 'click') {
-      // Click-mode → always tap at release coord, ignore drag movement
-      var rect = $viewport.getBoundingClientRect();
-      showClickEffect(e.clientX - rect.left, e.clientY - rect.top, 'human');
-      recordAction('click', { x: endX, y: endY });
-      apiPost('/live/click', { x: endX, y: endY });
+      // Click-mode → tap at release coord. Drags in click-mode are silently
+      // dropped to match the old behavior (browser's native click event was
+      // suppressed by drag); this prevents accidental clicks once touch input
+      // is involved.
+      if (!ps.dragged) {
+        var rect = $viewport.getBoundingClientRect();
+        showClickEffect(e.clientX - rect.left, e.clientY - rect.top, 'human');
+        recordAction('click', { x: endX, y: endY });
+        apiPost('/live/click', { x: endX, y: endY });
+      }
     }
+    // (Note: if interactionMode changed to 'highlight' mid-gesture, both
+    // branches above miss and the gesture is silently dropped. Acceptable —
+    // the next native click event will be picked up by the highlight handler.)
   });
 
   $viewport.addEventListener('pointercancel', function(e) {
