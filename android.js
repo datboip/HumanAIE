@@ -51,7 +51,7 @@ const SERIAL_REF = { current: 'emulator-5554' };
 if (!ADB_AVAILABLE) {
   // /android/status still returns a valid response when ADB is missing — the Cam UI relies on it.
   router.get('/status', (req, res) => {
-    res.json({ adb_available: false, phone_connected: false, phone_addr: '', battery: null, package: '', activity: '' });
+    res.json({ adb_available: false, phone_connected: false, phone_addr: '', battery: null, package: '', activity: '', screen_on: false });
   });
   router.use((req, res) => {
     res.status(503).json({
@@ -233,6 +233,7 @@ if (!ADB_AVAILABLE) {
   router.get('/status', async (req, res) => {
     let phone_connected = false;
     let batteryLevel = null;
+    let screen_on = false;
     let foreground = { package: '', activity: '' };
     try {
       const devOut = (await adbAsync('devices')).toString();
@@ -243,6 +244,10 @@ if (!ADB_AVAILABLE) {
         const b = (await adbAsync('shell', 'dumpsys battery | grep level')).toString();
         const m = b.match(/level:\s*(\d+)/); if (m) batteryLevel = parseInt(m[1], 10);
       } catch {}
+      try {
+        const p = (await adbAsync('shell', 'dumpsys power | grep mWakefulness')).toString();
+        screen_on = parseWakefulness(p);
+      } catch {}
       foreground = await detectForeground();
     }
     res.json({
@@ -250,6 +255,7 @@ if (!ADB_AVAILABLE) {
       phone_connected,
       phone_addr: PHONE_ADDR,
       battery: batteryLevel,
+      screen_on,
       package: foreground.package,
       activity: foreground.activity,
     });

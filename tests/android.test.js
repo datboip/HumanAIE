@@ -112,3 +112,32 @@ test('parseWakefulness returns false for null/undefined', () => {
   assert.strictEqual(parseWakefulness(null), false);
   assert.strictEqual(parseWakefulness(undefined), false);
 });
+
+test('GET /android/status returns screen_on:false when ADB is unavailable', async (t) => {
+  const { ADB_AVAILABLE } = require('../android');
+  if (ADB_AVAILABLE) { t.skip('ADB present, covered by manual testing on real phone'); return; }
+
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13336' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  const res = await fetch('http://127.0.0.1:13336/android/status');
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.adb_available, false);
+  assert.strictEqual(body.screen_on, false);
+});
