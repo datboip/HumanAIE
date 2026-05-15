@@ -1668,6 +1668,24 @@
     return { x: Math.max(0, Math.min(vw, x)), y: Math.max(0, Math.min(vh, y)), screenX: relX, screenY: relY };
   }
 
+  // Map a browser pointer event's CSS coords to phone-screen pixel coords.
+  // Uses the viewport <img>'s naturalWidth/Height — that's whatever the most recent
+  // MJPEG frame actually was, so rotation is handled automatically (the new frame
+  // brings new natural dimensions).
+  function screenToPhone(e) {
+    if (!$viewport) return null;
+    var nw = $viewport.naturalWidth;
+    var nh = $viewport.naturalHeight;
+    if (!nw || !nh) return null;
+    var rect = $viewport.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    var x = Math.round((e.clientX - rect.left) / rect.width  * nw);
+    var y = Math.round((e.clientY - rect.top ) / rect.height * nh);
+    if (x < 0) x = 0; else if (x > nw - 1) x = nw - 1;
+    if (y < 0) y = 0; else if (y > nh - 1) y = nh - 1;
+    return { x: x, y: y };
+  }
+
   // ---- Click handling on viewport ----
   $viewport.addEventListener('click', function(e) {
     if (state.interactionMode === 'drag') return;
