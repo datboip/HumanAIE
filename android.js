@@ -51,7 +51,7 @@ const SERIAL_REF = { current: 'emulator-5554' };
 if (!ADB_AVAILABLE) {
   // /android/status still returns a valid response when ADB is missing — the Cam UI relies on it.
   router.get('/status', (req, res) => {
-    res.json({ adb_available: false, phone_connected: false, phone_addr: '', battery: null, package: '', activity: '', screen_on: false });
+    res.json({ adb_available: false, phone_connected: false, phone_addr: '', battery: null, screen_on: false, package: '', activity: '' });
   });
   router.use((req, res) => {
     res.status(503).json({
