@@ -649,6 +649,7 @@
     grid-area: 1 / 1;
   }
   #controls-popup .control-tab-pane[hidden] {
+    display: block; /* override UA [hidden] { display: none } so the hidden pane keeps its grid track and reserves space */
     visibility: hidden;
     pointer-events: none;
   }
