@@ -5,6 +5,14 @@ const path = require('node:path');
 const { execFileSync, execFile } = require('node:child_process');
 const express = require('express');
 
+function parseWakefulness(dumpsysOutput) {
+  if (typeof dumpsysOutput !== 'string' || dumpsysOutput.length === 0) return false;
+  const match = dumpsysOutput.match(/mWakefulness=(\w+)/);
+  if (!match) return false;
+  const value = match[1];
+  return value === 'Awake' || value === 'Dreaming';
+}
+
 const ADB_SEARCH_PATHS = [
   '/usr/lib/android-sdk/platform-tools/adb',
   '/usr/local/bin/adb',
@@ -340,3 +348,4 @@ module.exports.PHONE_PORT = PHONE_PORT;
 module.exports.PHONE_ADDR = PHONE_ADDR;
 module.exports.SERIAL = () => SERIAL_REF.current;
 module.exports.getForeground = () => getForeground;
+module.exports.parseWakefulness = parseWakefulness;

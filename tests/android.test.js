@@ -71,3 +71,44 @@ test('POST /android/tap returns 400 on missing coords (when ADB available)', asy
   });
   assert.strictEqual(res.status, 400);
 });
+
+test('parseWakefulness returns true for Awake', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness('  mWakefulness=Awake\n'), true);
+});
+
+test('parseWakefulness returns true for Dreaming', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness('mWakefulness=Dreaming'), true);
+});
+
+test('parseWakefulness returns false for Asleep', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness('mWakefulness=Asleep'), false);
+});
+
+test('parseWakefulness returns false for Dozing', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness('mWakefulness=Dozing'), false);
+});
+
+test('parseWakefulness returns false for unknown vendor state', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness('mWakefulness=Some_New_State'), false);
+});
+
+test('parseWakefulness returns false when no mWakefulness in output', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness('some unrelated dumpsys text'), false);
+});
+
+test('parseWakefulness returns false for empty string', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness(''), false);
+});
+
+test('parseWakefulness returns false for null/undefined', () => {
+  const { parseWakefulness } = require('../android');
+  assert.strictEqual(parseWakefulness(null), false);
+  assert.strictEqual(parseWakefulness(undefined), false);
+});
