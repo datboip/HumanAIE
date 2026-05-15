@@ -2283,9 +2283,10 @@
         }
       } else {
         // No movement in drag-mode → treat as tap/click at start coords
-        var rect = $viewport.getBoundingClientRect();
-        showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human');
         if (androidMode) {
+          // Android tap: ripple + recordAction + /android/tap (new path)
+          var rect = $viewport.getBoundingClientRect();
+          showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human');
           var tapP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
           if (!tapP) return;
           recordAction('tap', { x: tapP.x, y: tapP.y });
@@ -2295,8 +2296,7 @@
             body: JSON.stringify({ x: tapP.x, y: tapP.y }),
           }).catch(function(err) { console.warn('android tap failed', err); });
         } else {
-          // Browser-mode: no-movement in drag-mode → click at start coords
-          recordAction('click', { x: ps.startVirtualX, y: ps.startVirtualY });
+          // Browser: only /live/click (preserves pre-existing behavior — no ripple, no recordAction)
           apiPost('/live/click', { x: ps.startVirtualX, y: ps.startVirtualY });
         }
       }
