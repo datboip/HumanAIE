@@ -761,6 +761,28 @@
     font-weight: bold;
     letter-spacing: 1px;
   }
+
+  /* Phone-asleep banner — sits above the viewport in HANDROID mode when
+     /android/status reports screen_on:false. Click to wake. */
+  #phone-sleep-banner {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    background: rgba(0, 0, 0, 0.55);
+    color: #c8f0c8;
+    font-family: inherit;
+    font-size: 14px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  #phone-sleep-banner.shown { display: flex; }
+  #phone-sleep-banner .ps-title { font-weight: bold; font-size: 16px; color: #d0f0d0; }
+  #phone-sleep-banner .ps-hint  { opacity: 0.7; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -876,6 +898,12 @@
         </div>
       </div>
     </div>
+
+        <div id="phone-sleep-banner">
+          <div>💤</div>
+          <div class="ps-title">Phone is asleep</div>
+          <div class="ps-hint">tap to wake</div>
+        </div>
 
   </div>
 
