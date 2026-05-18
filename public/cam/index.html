@@ -1632,6 +1632,14 @@
       }
     }
 
+    // Phone-asleep banner toggle. Show only when phone is connected AND screen is off
+    // (when phone disconnected, the existing NO-PHONE splash takes over).
+    var sleepBanner = document.getElementById('phone-sleep-banner');
+    if (sleepBanner) {
+      var shouldShowSleep = androidMode && androidStatus.phone_connected && androidStatus.screen_on === false;
+      sleepBanner.classList.toggle('shown', shouldShowSleep);
+    }
+
     var txt = document.getElementById('android-status-text');
     if (txt) {
       if (!androidStatus.adb_available) txt.textContent = 'ADB not installed';
@@ -1654,6 +1662,20 @@
   bindIf('ac-recent',   'click',  function() { androidKey('KEYCODE_APP_SWITCH'); });
   bindIf('splash-reconnect', 'click', refreshAndroidStatus);
   bindIf('android-app-launcher', 'change', function(e) { launchAndroidApp(e.target.value); });
+
+  (function bindSleepBanner() {
+    var el = document.getElementById('phone-sleep-banner');
+    if (!el) return;
+    el.addEventListener('click', function() {
+      fetch('/android/key', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ keycode: 'KEYCODE_WAKEUP' }),
+      }).catch(function(err) { console.warn('wake key failed', err); });
+      // Immediately re-poll status so the banner clears as soon as the phone wakes.
+      if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus();
+    });
+  })();
 
   androidStatusTimer = setInterval(refreshAndroidStatus, 5000);
   refreshAndroidStatus();
