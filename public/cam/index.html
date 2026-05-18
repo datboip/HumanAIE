@@ -783,6 +783,21 @@
   #phone-sleep-banner.shown { display: flex; }
   #phone-sleep-banner .ps-title { font-weight: bold; font-size: 16px; color: #d0f0d0; }
   #phone-sleep-banner .ps-hint  { opacity: 0.7; font-size: 11px; }
+
+  /* Optional coordinate grid laid over the viewport. Toggled by .shown.
+     pointer-events:none so clicks/drags pass through to the viewport. */
+  #viewport-grid {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+    display: none;
+    background-image:
+      linear-gradient(to right, rgba(0, 255, 100, 0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 255, 100, 0.18) 1px, transparent 1px);
+    background-size: 5% 5%;
+  }
+  #viewport-grid.shown { display: block; }
 </style>
 </head>
 <body>
@@ -905,6 +920,8 @@
           <div class="ps-hint">tap to wake</div>
         </div>
 
+        <div id="viewport-grid"></div>
+
   </div>
 
   <!-- Control bar -->
@@ -919,6 +936,7 @@
     <button class="nav-btn cb-mode active-mode" id="mode-click" onclick="setMode('click')" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">🖱 Click</button>
     <button class="nav-btn cb-mode" id="mode-drag" onclick="setMode('drag')" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">✋ Drag</button>
     <button class="nav-btn cb-mode" id="mode-highlight" onclick="toggleHighlightMode()" style="min-width:60px;height:28px;font-size:11px;padding:0 8px" title="Mark something for the AI to see">👆 Point</button>
+    <button class="nav-btn" id="mode-grid" onclick="toggleGrid(event)" title="Toggle coordinate grid" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">▦ Grid</button>
     <div class="cb-sep"></div>
 
     <!-- Popup trigger buttons -->
@@ -2236,6 +2254,15 @@
     if (mode === 'drag') $viewport.style.cursor = 'grab';
     else if (mode === 'highlight') $viewport.style.cursor = 'cell';
     else $viewport.style.cursor = 'crosshair';
+  };
+
+  window.toggleGrid = function(event) {
+    var grid = document.getElementById('viewport-grid');
+    var btn = document.getElementById('mode-grid');
+    if (!grid) return;
+    var on = grid.classList.toggle('shown');
+    if (btn) btn.classList.toggle('active-mode', on);
+    if (event && event.preventDefault) event.preventDefault();
   };
 
   // ---- Unified pointer handler for the viewport ----
