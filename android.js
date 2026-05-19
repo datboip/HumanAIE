@@ -125,23 +125,40 @@ if (!ADB_AVAILABLE) {
   let h264RestartTimer = null;
   let h264WatchdogTimer = null;
   let h264LastFrameAt = 0;
+  let h264FailedStarts = 0;
+  let h264DisabledUntil = 0;
+  function killH264ProcessGroup() {
+    if (!h264ShellProc) return;
+    const pid = h264ShellProc.pid;
+    h264ShellProc = null;
+    // Spawned with detached:true so the bash subprocess is its own process
+    // group leader. Negative PID = signal the whole group so adb screenrecord
+    // and ffmpeg (grandchildren) get killed too, not just the bash wrapper.
+    try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch {} }
+  }
   function startH264Stream() {
     h264RestartTimer = null;
-    // Single bash pipeline so adb's stdout goes directly to ffmpeg's stdin
-    // via an OS-level pipe — Node only reads the final MJPEG output.
+    if (Date.now() < h264DisabledUntil) {
+      // Backed off — try again later (handled by the disable timer below).
+      return;
+    }
     const cmd =
       `${adbPath} -s ${SERIAL_REF.current} exec-out screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout` +
       ` | ffmpeg -loglevel error -fflags +genpts -probesize 100000 -analyzeduration 0` +
       ` -f h264 -i pipe:0 -vf scale=540:-2` +
       ` -f image2pipe -vcodec mjpeg -q:v 5 pipe:1`;
     try {
-      h264ShellProc = spawn('bash', ['-c', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
+      h264ShellProc = spawn('bash', ['-c', cmd], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,    // own process group so killH264ProcessGroup() can kill the whole tree
+      });
     } catch (e) {
       console.log('[android] h264 stream unavailable (' + e.message + '), screencap fallback only');
       return;
     }
     h264LastFrameAt = Date.now();
     h264ShellProc.stderr.on('data', () => {});
+    let gotFrames = false;
     let frameBuf = Buffer.alloc(0);
     h264ShellProc.stdout.on('data', chunk => {
       frameBuf = Buffer.concat([frameBuf, chunk]);
@@ -150,6 +167,8 @@ if (!ADB_AVAILABLE) {
         if (frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD8) start = i;
         if (start !== -1 && frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD9) {
           h264LastFrameAt = Date.now();
+          gotFrames = true;
+          h264FailedStarts = 0; // reset on healthy frame
           pushFrame(frameBuf.slice(start, i + 2));
           frameBuf = frameBuf.slice(i + 2);
           start = -1;
@@ -160,17 +179,24 @@ if (!ADB_AVAILABLE) {
     });
     const restart = () => {
       if (h264WatchdogTimer) { clearInterval(h264WatchdogTimer); h264WatchdogTimer = null; }
-      try { if (h264ShellProc) h264ShellProc.kill('SIGKILL'); } catch {}
-      h264ShellProc = null;
+      killH264ProcessGroup();
+      if (!gotFrames) {
+        h264FailedStarts++;
+        if (h264FailedStarts >= 3) {
+          // After 3 starts with zero frames, this phone+state isn't going to
+          // h264-stream cleanly. Back off for 5 minutes — screencap fallback
+          // serves frames meanwhile. Try again later in case state changed.
+          h264DisabledUntil = Date.now() + 5 * 60 * 1000;
+          console.log('[android] h264 producing no frames after 3 tries; backing off 5 min, screencap fallback only');
+          h264FailedStarts = 0;
+          return;
+        }
+      }
       if (h264RestartTimer) return;
       h264RestartTimer = setTimeout(startH264Stream, 2000);
     };
     h264ShellProc.on('close', restart);
     h264ShellProc.on('error', restart);
-    // Watchdog: if no h264 frame has hit pushFrame() in 20s, the pipeline
-    // is stuck (Samsung MediaCodec quirk on some screens). Kill and restart
-    // — the close handler will respawn after a 2s backoff. Without this,
-    // orphan screenrecord+ffmpeg pairs accumulate forever.
     h264WatchdogTimer = setInterval(() => {
       if (Date.now() - h264LastFrameAt > 20000) {
         console.log('[android] h264 stalled (no frame in 20s); restarting');
@@ -179,6 +205,12 @@ if (!ADB_AVAILABLE) {
     }, 5000);
   }
   startH264Stream();
+  // Backoff retry — every minute, re-arm if the 5-min disable expired.
+  setInterval(() => {
+    if (!h264ShellProc && Date.now() >= h264DisabledUntil && !h264RestartTimer) {
+      startH264Stream();
+    }
+  }, 60 * 1000);
 
   // ── FALLBACK: per-frame screencap loop ───────────────────────────────────────
   // Still runs alongside the h264 stream. If h264 is healthy it produces
