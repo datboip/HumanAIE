@@ -2293,7 +2293,9 @@
       startTime: e.timeStamp,
       dragged: false,
     };
-    if (state.interactionMode === 'drag') {
+    // HANDROID mode always uses drag-like cursor + preventDefault — the viewport
+    // should feel like a phone screen regardless of which mode toggle is active.
+    if (androidMode || state.interactionMode === 'drag') {
       $viewport.style.cursor = 'grabbing';
       e.preventDefault();
     }
@@ -2310,14 +2312,14 @@
         pointerState.dragged = true;
       }
     }
-    if (state.interactionMode === 'drag') e.preventDefault();
+    if (androidMode || state.interactionMode === 'drag') e.preventDefault();
   });
 
   $viewport.addEventListener('pointerup', function(e) {
     if (!pointerState || e.pointerId !== pointerState.id) return;
     var ps = pointerState;
     pointerState = null;
-    if (state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
+    if (androidMode || state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
 
     var endCoords = screenToVirtual(e);
     var endX = endCoords ? endCoords.x : ps.startVirtualX;
@@ -2331,50 +2333,47 @@
       $viewport.naturalHeight !== ps.startNaturalH
     );
 
-    // Highlight mode handled in the simple-click branch below — the early-return in
-    // pointerdown means highlight mode falls through to the legacy click flow.
+    // ── HANDROID mode: gesture-based routing (tap = tap, drag = swipe).
+    // Ignores interactionMode — the viewport should feel like a phone screen.
+    if (androidMode) {
+      if (ps.dragged) {
+        if (rotated) return;
+        var startP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
+        var endP   = screenToPhone(e);
+        if (!startP || !endP) return;
+        var dur = e.timeStamp - ps.startTime;
+        if (dur < 100) dur = 100; else if (dur > 1000) dur = 1000;
+        recordAction('swipe', { x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur });
+        fetch('/android/swipe', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur }),
+        }).catch(function(err) { console.warn('android swipe failed', err); });
+      } else {
+        var rect = $viewport.getBoundingClientRect();
+        showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human');
+        var tapP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
+        if (!tapP) return;
+        recordAction('tap', { x: tapP.x, y: tapP.y });
+        fetch('/android/tap', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ x: tapP.x, y: tapP.y }),
+        }).catch(function(err) { console.warn('android tap failed', err); });
+      }
+      return;
+    }
 
+    // ── Browser mode: original mode-based dispatch (unchanged) ──
     if (state.interactionMode === 'drag') {
       if (ps.dragged) {
-        // Drag in drag-mode → swipe (android) or scroll (browser)
-        if (androidMode) {
-          if (rotated) return;
-          var startP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
-          var endP   = screenToPhone(e);
-          if (!startP || !endP) return;
-          var dur = e.timeStamp - ps.startTime;
-          if (dur < 100) dur = 100; else if (dur > 1000) dur = 1000;
-          recordAction('swipe', { x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur });
-          fetch('/android/swipe', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur }),
-          }).catch(function(err) { console.warn('android swipe failed', err); });
-        } else {
-          // Browser-mode: drag → scroll
-          apiPost('/live/scroll', {
-            direction: (endY < ps.startVirtualY) ? 'down' : 'up',
-            amount: Math.abs(endY - ps.startVirtualY),
-          });
-        }
+        apiPost('/live/scroll', {
+          direction: (endY < ps.startVirtualY) ? 'down' : 'up',
+          amount: Math.abs(endY - ps.startVirtualY),
+        });
       } else {
-        // No movement in drag-mode → treat as tap/click at start coords
-        if (androidMode) {
-          // Android tap: ripple + recordAction + /android/tap (new path)
-          var rect = $viewport.getBoundingClientRect();
-          showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human');
-          var tapP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
-          if (!tapP) return;
-          recordAction('tap', { x: tapP.x, y: tapP.y });
-          fetch('/android/tap', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ x: tapP.x, y: tapP.y }),
-          }).catch(function(err) { console.warn('android tap failed', err); });
-        } else {
-          // Browser: only /live/click (preserves pre-existing behavior — no ripple, no recordAction)
-          apiPost('/live/click', { x: ps.startVirtualX, y: ps.startVirtualY });
-        }
+        // Browser drag-mode + no movement → click at start coord, no ripple (preserves old behavior).
+        apiPost('/live/click', { x: ps.startVirtualX, y: ps.startVirtualY });
       }
     } else if (state.interactionMode === 'click') {
       // Click-mode → tap at release coord. Drags in click-mode are silently
@@ -2384,19 +2383,8 @@
       if (!ps.dragged) {
         var rect2 = $viewport.getBoundingClientRect();
         showClickEffect(e.clientX - rect2.left, e.clientY - rect2.top, 'human');
-        if (androidMode) {
-          var clickP = screenToPhone(e);
-          if (!clickP) return;
-          recordAction('tap', { x: clickP.x, y: clickP.y });
-          fetch('/android/tap', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ x: clickP.x, y: clickP.y }),
-          }).catch(function(err) { console.warn('android tap failed', err); });
-        } else {
-          recordAction('click', { x: endX, y: endY });
-          apiPost('/live/click', { x: endX, y: endY });
-        }
+        recordAction('click', { x: endX, y: endY });
+        apiPost('/live/click', { x: endX, y: endY });
       }
     }
     // (Note: if interactionMode changed to 'highlight' mid-gesture, both
@@ -2407,7 +2395,7 @@
   $viewport.addEventListener('pointercancel', function(e) {
     if (pointerState && e.pointerId === pointerState.id) {
       pointerState = null;
-      if (state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
+      if (androidMode || state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
     }
   });
 
