@@ -2302,13 +2302,12 @@
   $viewport.addEventListener('pointermove', function(e) {
     if (!pointerState || e.pointerId !== pointerState.id) return;
     if (!pointerState.dragged) {
-      var endCoords = screenToVirtual(e);
-      if (endCoords) {
-        var dx = Math.abs(endCoords.x - pointerState.startVirtualX);
-        var dy = Math.abs(endCoords.y - pointerState.startVirtualY);
-        if (dx >= DRAG_THRESHOLD_PX || dy >= DRAG_THRESHOLD_PX) {
-          pointerState.dragged = true;
-        }
+      // Threshold is in CSS pixels — virtual-coord deltas are too sensitive on
+      // a 500px-wide viewport rendering a 1080-2400px phone screen (5 virtual ≈ 2 CSS px).
+      var dx = Math.abs(e.clientX - pointerState.startClientX);
+      var dy = Math.abs(e.clientY - pointerState.startClientY);
+      if (dx >= DRAG_THRESHOLD_PX || dy >= DRAG_THRESHOLD_PX) {
+        pointerState.dragged = true;
       }
     }
     if (state.interactionMode === 'drag') e.preventDefault();
