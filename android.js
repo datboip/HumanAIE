@@ -110,11 +110,20 @@ if (!ADB_AVAILABLE) {
   // Capture cadence is configurable via POST /android/config. Lower ms = higher FPS.
   let captureIntervalMs = 80; // default ~12fps
 
+  // Async screencap — execFile (not execFileSync) so the event loop stays free
+  // while ADB is in flight. encoding:'buffer' gives us raw PNG bytes back.
+  function screencapAsync() {
+    return new Promise((resolve, reject) => {
+      execFile(adbPath, ['-s', SERIAL_REF.current, 'exec-out', 'screencap', '-p'],
+        { timeout: 10000, maxBuffer: 20 * 1024 * 1024, encoding: 'buffer' },
+        (err, stdout) => err ? reject(err) : resolve(stdout));
+    });
+  }
+
   (async function captureLoop() {
     while (true) {
       try {
-        const buf = execFileSync(adbPath, ['-s', SERIAL_REF.current, 'exec-out', 'screencap', '-p'],
-          { timeout: 10000, maxBuffer: 20 * 1024 * 1024 });
+        const buf = await screencapAsync();
         if (buf && buf.length > 1000) pushFrame(buf);
       } catch { /* phone offline, emulator rebooting, etc. */ }
       await new Promise(r => setTimeout(r, captureIntervalMs));
