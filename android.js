@@ -181,6 +181,21 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Wake + dismiss keyguard in one call. KEYCODE_WAKEUP only turns the screen
+  // on — modern Android still shows the lockscreen, and the sleep banner on
+  // the cam UI blocks the user's swipe-up gesture that would dismiss it. So
+  // we wake, give the screen 250ms to render, then try `wm dismiss-keyguard`
+  // (works on no-security phones; brings up PIN entry on secured ones — both
+  // are correct outcomes for "user wants to use the phone").
+  router.post('/wake', async (req, res) => {
+    try {
+      await adbAsync('shell', 'input keyevent KEYCODE_WAKEUP');
+      await new Promise(r => setTimeout(r, 250));
+      try { await adbAsync('shell', 'wm dismiss-keyguard'); } catch {}
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   router.post('/key', async (req, res) => {
     const { keycode } = req.body || {};
     if (!keycode) return res.status(400).json({ error: 'keycode required' });

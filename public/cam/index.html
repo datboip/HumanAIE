@@ -1685,12 +1685,13 @@
     var el = document.getElementById('phone-sleep-banner');
     if (!el) return;
     el.addEventListener('click', function() {
-      fetch('/android/key', {
+      // /android/wake = WAKEUP + dismiss-keyguard. Plain KEYCODE_WAKEUP would
+      // turn on the screen but leave the user on the lockscreen, where the
+      // banner itself blocks the swipe-up gesture needed to dismiss it.
+      fetch('/android/wake', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ keycode: 'KEYCODE_WAKEUP' }),
-      }).catch(function(err) { console.warn('wake key failed', err); });
-      // Immediately re-poll status so the banner clears as soon as the phone wakes.
+      }).catch(function(err) { console.warn('wake failed', err); });
       if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus();
     });
   })();
