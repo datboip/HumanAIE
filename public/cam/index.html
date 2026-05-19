@@ -1788,8 +1788,28 @@
       nh = $viewport.naturalHeight;
     }
     if (!nw || !nh) return null;
-    var x = Math.round((e.clientX - rect.left) / rect.width  * nw);
-    var y = Math.round((e.clientY - rect.top ) / rect.height * nh);
+    // The <img> uses object-fit:contain, so the rendered phone content is
+    // letterboxed inside rect. Without accounting for that, a drag from
+    // "left edge of visible phone" to "right edge of visible phone" only
+    // maps to ~25% of phone-pixel width — swipes feel useless.
+    var imgAspect = nw / nh;
+    var boxAspect = rect.width / rect.height;
+    var renderW, renderH, offsetX, offsetY;
+    if (imgAspect > boxAspect) {
+      renderW = rect.width;
+      renderH = rect.width / imgAspect;
+      offsetX = 0;
+      offsetY = (rect.height - renderH) / 2;
+    } else {
+      renderH = rect.height;
+      renderW = rect.height * imgAspect;
+      offsetX = (rect.width - renderW) / 2;
+      offsetY = 0;
+    }
+    var relX = e.clientX - rect.left - offsetX;
+    var relY = e.clientY - rect.top  - offsetY;
+    var x = Math.round(relX / renderW * nw);
+    var y = Math.round(relY / renderH * nh);
     if (x < 0) x = 0; else if (x > nw - 1) x = nw - 1;
     if (y < 0) y = 0; else if (y > nh - 1) y = nh - 1;
     return { x: x, y: y };
