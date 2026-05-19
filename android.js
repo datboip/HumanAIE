@@ -123,14 +123,12 @@ if (!ADB_AVAILABLE) {
   //   ~25-30 FPS where the screencap-per-frame loop manages ~3-12.
   let h264ShellProc = null;
   let h264RestartTimer = null;
+  let h264WatchdogTimer = null;
+  let h264LastFrameAt = 0;
   function startH264Stream() {
     h264RestartTimer = null;
-    // Single bash pipeline: adb's stdout goes directly to ffmpeg's stdin
-    // via an OS-level pipe, and Node only reads the final MJPEG output.
-    // Going through Node's .pipe() between them was causing Samsung
-    // screenrecord streams to never flush enough data for ffmpeg's
-    // h264 demuxer to lock on, even with +genpts +probesize 100000.
-    // OS pipe avoids that intermediate buffering entirely.
+    // Single bash pipeline so adb's stdout goes directly to ffmpeg's stdin
+    // via an OS-level pipe — Node only reads the final MJPEG output.
     const cmd =
       `${adbPath} -s ${SERIAL_REF.current} exec-out screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout` +
       ` | ffmpeg -loglevel error -fflags +genpts -probesize 100000 -analyzeduration 0` +
@@ -142,6 +140,7 @@ if (!ADB_AVAILABLE) {
       console.log('[android] h264 stream unavailable (' + e.message + '), screencap fallback only');
       return;
     }
+    h264LastFrameAt = Date.now();
     h264ShellProc.stderr.on('data', () => {});
     let frameBuf = Buffer.alloc(0);
     h264ShellProc.stdout.on('data', chunk => {
@@ -150,6 +149,7 @@ if (!ADB_AVAILABLE) {
       for (let i = 0; i < frameBuf.length - 1; i++) {
         if (frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD8) start = i;
         if (start !== -1 && frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD9) {
+          h264LastFrameAt = Date.now();
           pushFrame(frameBuf.slice(start, i + 2));
           frameBuf = frameBuf.slice(i + 2);
           start = -1;
@@ -159,13 +159,24 @@ if (!ADB_AVAILABLE) {
       if (frameBuf.length > 2 * 1024 * 1024) frameBuf = Buffer.alloc(0);
     });
     const restart = () => {
-      try { if (h264ShellProc) h264ShellProc.kill(); } catch {}
+      if (h264WatchdogTimer) { clearInterval(h264WatchdogTimer); h264WatchdogTimer = null; }
+      try { if (h264ShellProc) h264ShellProc.kill('SIGKILL'); } catch {}
       h264ShellProc = null;
       if (h264RestartTimer) return;
       h264RestartTimer = setTimeout(startH264Stream, 2000);
     };
     h264ShellProc.on('close', restart);
     h264ShellProc.on('error', restart);
+    // Watchdog: if no h264 frame has hit pushFrame() in 20s, the pipeline
+    // is stuck (Samsung MediaCodec quirk on some screens). Kill and restart
+    // — the close handler will respawn after a 2s backoff. Without this,
+    // orphan screenrecord+ffmpeg pairs accumulate forever.
+    h264WatchdogTimer = setInterval(() => {
+      if (Date.now() - h264LastFrameAt > 20000) {
+        console.log('[android] h264 stalled (no frame in 20s); restarting');
+        restart();
+      }
+    }, 5000);
   }
   startH264Stream();
 
