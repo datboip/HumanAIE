@@ -2256,12 +2256,54 @@
     else $viewport.style.cursor = 'crosshair';
   };
 
+  // Position the grid overlay to match the actual phone-image content area
+  // (object-fit:contain letterboxes the <img> inside its CSS box; the grid
+  // should track the visible image, not the letterbox). Reuses the same
+  // letterbox math as virtualToScreen.
+  function positionGrid() {
+    var grid = document.getElementById('viewport-grid');
+    if (!grid) return;
+    var imgW = $viewport.naturalWidth;
+    var imgH = $viewport.naturalHeight;
+    if (!imgW || !imgH) return;
+    var vpRect = $viewport.getBoundingClientRect();
+    var wRect  = $viewportWrapper.getBoundingClientRect();
+    if (!vpRect.width || !vpRect.height) return;
+    var scale = Math.min(vpRect.width / imgW, vpRect.height / imgH);
+    var renderW = imgW * scale;
+    var renderH = imgH * scale;
+    var offsetX = (vpRect.width  - renderW) / 2;
+    var offsetY = (vpRect.height - renderH) / 2;
+    grid.style.left   = (vpRect.left - wRect.left + offsetX) + 'px';
+    grid.style.top    = (vpRect.top  - wRect.top  + offsetY) + 'px';
+    grid.style.right  = 'auto';
+    grid.style.bottom = 'auto';
+    grid.style.width  = renderW + 'px';
+    grid.style.height = renderH + 'px';
+  }
+
+  var gridTrackTimer = null;
   window.toggleGrid = function(event) {
     var grid = document.getElementById('viewport-grid');
     var btn = document.getElementById('mode-grid');
     if (!grid) return;
     var on = grid.classList.toggle('shown');
     if (btn) btn.classList.toggle('active-mode', on);
+    if (on) {
+      positionGrid();
+      // Poll while shown — picks up rotation (naturalWidth/Height change with
+      // each MJPEG frame on phone rotate), window resize, and the first
+      // frame's arrival. Stops itself when the grid is toggled off.
+      if (gridTrackTimer) clearInterval(gridTrackTimer);
+      gridTrackTimer = setInterval(function() {
+        if (!grid.classList.contains('shown')) {
+          clearInterval(gridTrackTimer);
+          gridTrackTimer = null;
+          return;
+        }
+        positionGrid();
+      }, 250);
+    }
     if (event && event.preventDefault) event.preventDefault();
   };
 
