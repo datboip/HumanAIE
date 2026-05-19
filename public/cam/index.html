@@ -199,22 +199,6 @@
   .phone-tab-indicator[data-state="connected"] { background: #0f0; }
   .phone-tab-indicator[data-state="disconnected"] { background: #f00; }
   .phone-tab-indicator[data-state="no-adb"]      { background: #888; }
-  /* Git SHA badge next to HANDROID label — surfaces the running commit so
-     you can confirm "did my pull take effect" at a glance. */
-  .phone-tab-sha {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 0 5px;
-    font-family: "Courier New", monospace;
-    font-size: 10px;
-    font-weight: normal;
-    color: #003a14;
-    background: rgba(0, 0, 0, 0.18);
-    border-radius: 2px;
-    opacity: 0.85;
-  }
-  .phone-tab-sha:empty { display: none; }
-  .phone-tab-sha.dirty { background: rgba(180, 60, 0, 0.45); color: #fff; }
 
   /* ---- Waitfor banner ---- */
   #waitfor-banner {
@@ -623,14 +607,19 @@
   }
 
   .ac-side-btn {
-    min-width: 44px;
-    min-height: 44px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
     padding: 0;
-    font-size: 18px;
+    font-size: 16px;
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
   }
 
   #android-side-right select {
@@ -647,19 +636,21 @@
   /* Phone status now lives in the page-level statusbar (#status-text). The old floating strip is gone. */
   #android-status-bar { display: none !important; }
 
-  /* Side panel buttons — pill-style "hardware button" feel */
+  /* Side panel buttons — dark minimal style, ported from nanodroidcam. */
   #android-side-left .ac-side-btn {
     border-radius: 8px;
-    background: linear-gradient(180deg, #d0d0d0 0%, #a0a0a0 100%);
-    border: 1px solid #606060;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 2px rgba(0,0,0,0.3);
-    color: #202020;
+    background: #161616;
+    border: 1px solid #252525;
+    box-shadow: none;
+    color: #888;
   }
   #android-side-left .ac-side-btn:hover {
-    background: linear-gradient(180deg, #e0e0e0 0%, #b0b0b0 100%);
+    background: #1f1f1f;
+    color: #aaa;
   }
   #android-side-left .ac-side-btn:active {
-    background: linear-gradient(180deg, #909090 0%, #b0b0b0 100%);
+    background: #2a2a2a;
+    color: #3ddc84;
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
   }
 
@@ -851,7 +842,6 @@
     <!-- Pinned green PHONE tab — always present, can't close. Switches Cam UI to Android mode. -->
     <div id="phone-tab" class="tab phone-tab" title="Android phone view">
       <span class="tab-title">📱 HANDROID</span>
-      <span id="phone-tab-sha" class="phone-tab-sha" title="Running git commit"></span>
       <span id="phone-tab-indicator" class="phone-tab-indicator" data-state="unknown"></span>
     </div>
   </div>
@@ -2873,22 +2863,12 @@
     }
     loadSplashData();
 
-    // Fetch version from server and populate all ver-tag spans + the
-    // HANDROID-tab SHA badge. The SHA confirms which commit is running \u2014
-    // dirty marker (asterisk + red bg) flags uncommitted local changes.
+    // Fetch version from server and populate all ver-tag spans.
     apiGet('/version').then(function(d) {
-      if (!d) return;
-      if (d.version) {
-        var tags = document.querySelectorAll('.ver-tag');
-        for (var i = 0; i < tags.length; i++) tags[i].textContent = 'v' + d.version;
-        document.title = 'HumanAIE v' + d.version + ' \u2014 Human AI Eyes';
-      }
-      var sha = document.getElementById('phone-tab-sha');
-      if (sha && d.git_sha) {
-        sha.textContent = d.git_sha + (d.git_dirty ? '*' : '');
-        if (d.git_dirty) sha.classList.add('dirty');
-        sha.title = 'Running git ' + d.git_sha + (d.git_dirty ? ' (dirty \u2014 uncommitted changes)' : '');
-      }
+      if (!d || !d.version) return;
+      var tags = document.querySelectorAll('.ver-tag');
+      for (var i = 0; i < tags.length; i++) tags[i].textContent = 'v' + d.version;
+      document.title = 'HumanAIE v' + d.version + ' \u2014 Human AI Eyes';
     });
 
     // Bookmarks (stored in localStorage)
