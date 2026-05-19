@@ -433,6 +433,50 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── App favorites (apps.json) — read/add/remove for the launcher popup. ─
+  // Stored alongside the server module so it persists across restarts; not
+  // git-tracked (added to .gitignore) since it's per-deployment user data.
+  const APPS_JSON_PATH = path.join(__dirname, 'apps.json');
+  const DEFAULT_APPS = [
+    { pkg: 'com.android.settings', name: 'Settings' },
+    { pkg: 'com.android.chrome',   name: 'Chrome' },
+    { pkg: 'com.whatsapp',         name: 'WhatsApp' },
+  ];
+  function loadApps() {
+    try {
+      const raw = fs.readFileSync(APPS_JSON_PATH, 'utf-8');
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    } catch {}
+    return DEFAULT_APPS.slice();
+  }
+  function saveApps(apps) {
+    try { fs.writeFileSync(APPS_JSON_PATH, JSON.stringify(apps, null, 2)); } catch {}
+  }
+  router.get('/apps', (req, res) => {
+    res.json(loadApps());
+  });
+  router.post('/apps', (req, res) => {
+    const { pkg, name } = req.body || {};
+    if (!pkg || !name) return res.status(400).json({ error: 'pkg and name required' });
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(String(pkg))) {
+      return res.status(400).json({ error: 'invalid package name' });
+    }
+    const apps = loadApps();
+    if (apps.find(a => a.pkg === pkg)) {
+      return res.json({ ok: true, deduped: true });
+    }
+    apps.push({ pkg: String(pkg), name: String(name).slice(0, 40) });
+    saveApps(apps);
+    res.json({ ok: true });
+  });
+  router.delete('/apps/:pkg', (req, res) => {
+    const pkg = req.params.pkg;
+    const apps = loadApps().filter(a => a.pkg !== pkg);
+    saveApps(apps);
+    res.json({ ok: true });
+  });
+
   router.post('/install', async (req, res) => {
     const { apkPath } = req.body || {};
     if (!apkPath) return res.status(400).json({ error: 'apkPath required' });

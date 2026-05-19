@@ -11,6 +11,7 @@ sessions/
 history.json
 highlight-history.jsonl
 humanaie-interactions.jsonl
+apps.json
 
 # Recordings
 recordings/

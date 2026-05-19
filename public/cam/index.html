@@ -582,29 +582,90 @@
   }
   #android-side-left.shown { display: flex; }
 
-  /* App switcher — floats at top-right of the viewport, visually hanging from the HANDROID tab. */
+  /* App launcher — floats at top-right of the viewport. Compact button
+     that expands into a popup with the favorites list and an Add option. */
   #android-app-switcher {
     display: none;
     position: absolute;
     top: 8px;
     right: 16px;
-    z-index: 5;
-    background: var(--bg);
-    border: 2px outset var(--bg);
-    padding: 4px 6px;
-    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+    z-index: 12;
   }
   #android-app-switcher.shown { display: block; }
-  #android-app-switcher select {
-    border: 2px inset var(--shadow);
-    background: var(--url-bg);
+  #android-launcher-toggle {
+    background: #161616;
+    color: #ccc;
+    border: 1px solid #252525;
+    border-radius: 6px;
     font-family: inherit;
     font-size: 11px;
-    padding: 2px 4px;
-    color: var(--text);
-    height: 24px;
-    min-width: 120px;
+    padding: 4px 10px;
+    height: 28px;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   }
+  #android-launcher-toggle:hover { background: #1f1f1f; color: #fff; }
+  #android-launcher-popup {
+    display: none;
+    position: absolute;
+    top: 32px;
+    right: 0;
+    min-width: 180px;
+    max-width: 260px;
+    background: #161616;
+    border: 1px solid #252525;
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+  #android-launcher-popup.shown { display: block; }
+  .launcher-row {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    margin-bottom: 2px;
+  }
+  .launcher-app-btn {
+    flex: 1 1 auto;
+    background: transparent;
+    color: #ccc;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .launcher-app-btn:hover { background: #2a2a2a; color: #3ddc84; }
+  .launcher-del-btn {
+    width: 24px;
+    background: transparent;
+    color: #666;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .launcher-del-btn:hover { color: #ff6666; background: #2a1818; }
+  .launcher-add-btn {
+    display: block;
+    width: 100%;
+    background: transparent;
+    color: #888;
+    border: 1px dashed #333;
+    border-radius: 4px;
+    padding: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  .launcher-add-btn:hover { color: #3ddc84; border-color: #3ddc84; }
 
   .ac-side-btn {
     width: 36px;
@@ -905,14 +966,14 @@
       <button class="nav-btn ac-side-btn" id="ac-home" title="Home">&#9634;</button>
       <button class="nav-btn ac-side-btn" id="ac-recent" title="Recent apps">&#9776;</button>
     </div>
-    <!-- App switcher — floats at top-right of viewport, hangs from the HANDROID tab. -->
+    <!-- App launcher — floats at top-right of viewport. Click 🚀 to expand
+         the favorites popup, which is server-backed via /android/apps. -->
     <div id="android-app-switcher">
-      <select id="android-app-launcher" title="Launch app">
-        <option value="">&#9662; App</option>
-        <option value="com.android.settings">Settings</option>
-        <option value="com.android.chrome">Chrome</option>
-        <option value="com.whatsapp">WhatsApp</option>
-      </select>
+      <button id="android-launcher-toggle" onclick="toggleLauncher(event)" title="Launch an app">🚀 Launch</button>
+      <div id="android-launcher-popup">
+        <div id="android-launcher-list"></div>
+        <button class="launcher-add-btn" onclick="addAppToFavorites(event)">+ Add app</button>
+      </div>
     </div>
 
     <!-- Handroid splash overlay (covers viewport-wrapper when phone not connected).
@@ -1772,7 +1833,74 @@
   bindIf('ac-home',     'click',  function() { androidKey('KEYCODE_HOME'); });
   bindIf('ac-recent',   'click',  function() { androidKey('KEYCODE_APP_SWITCH'); });
   bindIf('splash-reconnect', 'click', refreshAndroidStatus);
-  bindIf('android-app-launcher', 'change', function(e) { launchAndroidApp(e.target.value); });
+  // Launcher popup wiring — load list lazily on first open
+  window.toggleLauncher = function(event) {
+    if (event) event.stopPropagation();
+    var popup = document.getElementById('android-launcher-popup');
+    if (!popup) return;
+    var willShow = !popup.classList.contains('shown');
+    popup.classList.toggle('shown', willShow);
+    if (willShow) loadLauncherList();
+  };
+  async function loadLauncherList() {
+    var list = document.getElementById('android-launcher-list');
+    if (!list) return;
+    while (list.firstChild) list.removeChild(list.firstChild);
+    try {
+      var apps = await fetch('/android/apps').then(function(r) { return r.json(); });
+      apps.forEach(function(a) {
+        var row = document.createElement('div');
+        row.className = 'launcher-row';
+        var launchBtn = document.createElement('button');
+        launchBtn.className = 'launcher-app-btn';
+        launchBtn.textContent = a.name;
+        launchBtn.title = a.pkg;
+        launchBtn.onclick = function() {
+          launchAndroidApp(a.pkg);
+          document.getElementById('android-launcher-popup').classList.remove('shown');
+        };
+        var delBtn = document.createElement('button');
+        delBtn.className = 'launcher-del-btn';
+        delBtn.textContent = '×';
+        delBtn.title = 'Remove ' + a.pkg;
+        delBtn.onclick = function(e) {
+          e.stopPropagation();
+          if (!confirm('Remove ' + a.name + ' (' + a.pkg + ')?')) return;
+          fetch('/android/apps/' + encodeURIComponent(a.pkg), { method: 'DELETE' })
+            .then(loadLauncherList)
+            .catch(function(err) { console.warn('remove app failed', err); });
+        };
+        row.appendChild(launchBtn);
+        row.appendChild(delBtn);
+        list.appendChild(row);
+      });
+    } catch (e) { console.warn('loadLauncherList failed', e); }
+  }
+  window.addAppToFavorites = function(event) {
+    if (event) event.stopPropagation();
+    var name = prompt('App name (e.g. Instagram):');
+    if (!name) return;
+    var pkg = prompt('Package name (e.g. com.instagram.android):');
+    if (!pkg) return;
+    fetch('/android/apps', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), pkg: pkg.trim() }),
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.error) alert('Add failed: ' + d.error);
+        loadLauncherList();
+      })
+      .catch(function(err) { console.warn('add app failed', err); });
+  };
+  // Close popup on outside click
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('android-app-switcher');
+    if (wrap && !wrap.contains(e.target)) {
+      var popup = document.getElementById('android-launcher-popup');
+      if (popup) popup.classList.remove('shown');
+    }
+  });
 
   (function bindSleepBanner() {
     var el = document.getElementById('phone-sleep-banner');
