@@ -196,9 +196,15 @@
     margin-left: 6px;
     background: #888;
   }
-  .phone-tab-indicator[data-state="connected"] { background: #0f0; }
-  .phone-tab-indicator[data-state="disconnected"] { background: #f00; }
-  .phone-tab-indicator[data-state="no-adb"]      { background: #888; }
+  .phone-tab-indicator {
+    border: 1px solid rgba(0, 0, 0, 0.5);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+  }
+  /* Connected state needs contrast against the green tab — pure green was
+     invisible. White dot with a dark ring stands out on any tab color. */
+  .phone-tab-indicator[data-state="connected"]    { background: #fff; }
+  .phone-tab-indicator[data-state="disconnected"] { background: #d80000; }
+  .phone-tab-indicator[data-state="no-adb"]       { background: #444; }
 
   /* ---- Waitfor banner ---- */
   #waitfor-banner {
@@ -1006,6 +1012,17 @@
             <span onclick="clearHistory()" style="font-size:9px;color:#999;cursor:pointer;font-weight:normal" title="Clear history">clear</span>
           </div>
           <div id="splash-history" style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:#888;max-height:120px;overflow-y:auto">Loading...</div>
+        </div>
+
+        <!-- 📱 Phone card — HANDROID status + quick launches from splash. -->
+        <div id="splash-phone-card" style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:220px;text-align:left">
+          <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+            📱 Phone
+            <span id="splash-phone-state" style="font-size:10px;font-weight:normal;color:#d80000">disconnected</span>
+          </div>
+          <div id="splash-phone-info" style="font-size:11px;color:#888;font-family:'Courier New',monospace;margin-bottom:8px;line-height:1.5">—</div>
+          <div id="splash-phone-launches" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px"></div>
+          <button class="nav-btn" onclick="openHandroidFromSplash()" id="splash-open-handroid" style="width:100%;height:26px;font-size:11px">Open HANDROID →</button>
         </div>
 
       </div>
@@ -3225,7 +3242,74 @@
           el.appendChild(a);
         });
       });
+
+      // Phone card: live status + favorited quick-launches
+      loadSplashPhoneCard();
     }
+    function loadSplashPhoneCard() {
+      var stateEl   = document.getElementById('splash-phone-state');
+      var infoEl    = document.getElementById('splash-phone-info');
+      var launchEl  = document.getElementById('splash-phone-launches');
+      var openBtn   = document.getElementById('splash-open-handroid');
+      var cardEl    = document.getElementById('splash-phone-card');
+      if (!stateEl || !infoEl || !launchEl) return;
+
+      fetch('/android/status').then(function(r) { return r.json(); }).then(function(s) {
+        var connected = s && s.adb_available && s.phone_connected;
+        var dim = connected ? '1' : '0.45';
+        if (cardEl) cardEl.style.opacity = dim;
+        if (!s || !s.adb_available) {
+          stateEl.textContent = 'no ADB'; stateEl.style.color = '#888';
+          infoEl.textContent = 'ADB not configured on the server.';
+        } else if (!s.phone_connected) {
+          stateEl.textContent = 'disconnected'; stateEl.style.color = '#d80000';
+          infoEl.textContent = 'No phone connected.';
+        } else {
+          stateEl.textContent = (s.screen_on ? 'awake' : 'asleep') + ' · connected';
+          stateEl.style.color = s.screen_on ? '#3ddc84' : '#cccc55';
+          var lines = [];
+          if (s.screen_w && s.screen_h) lines.push(s.screen_w + ' × ' + s.screen_h);
+          if (s.battery != null)        lines.push('battery ' + s.battery + '%');
+          if (s.package)                lines.push('fg: ' + s.package);
+          infoEl.textContent = lines.join(' · ') || '—';
+        }
+        if (openBtn) openBtn.disabled = !connected;
+
+        // Quick-launch grid from favorited apps. Click → switch to HANDROID + launch.
+        launchEl.innerHTML = '';
+        if (!connected) return;
+        fetch('/android/apps').then(function(r) { return r.json(); }).then(function(apps) {
+          (apps || []).slice(0, 6).forEach(function(a) {
+            var btn = document.createElement('button');
+            btn.className = 'nav-btn';
+            btn.style.cssText = 'height:26px;font-size:10px;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+            btn.textContent = a.name;
+            btn.title = a.pkg;
+            btn.onclick = function() {
+              // Switch to HANDROID and launch the picked app.
+              if (typeof switchToAndroidMode === 'function') switchToAndroidMode();
+              fetch('/android/launch', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ pkg: a.pkg }),
+              }).catch(function(err) { console.warn('launch failed', err); });
+            };
+            launchEl.appendChild(btn);
+          });
+        }).catch(function() {});
+      }).catch(function() {
+        stateEl.textContent = 'error'; stateEl.style.color = '#888';
+        infoEl.textContent = '/android/status request failed.';
+      });
+    }
+    window.openHandroidFromSplash = function() {
+      if (typeof switchToAndroidMode === 'function') switchToAndroidMode();
+    };
+    // Re-poll the phone card every 5s while splash is visible — keeps the
+    // status fresh without doing a full splash-data reload.
+    setInterval(function() {
+      if (state.splashVisible) loadSplashPhoneCard();
+    }, 5000);
     loadSplashData();
 
     // Fetch version from server and populate all ver-tag spans.
