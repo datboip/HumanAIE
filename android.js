@@ -504,6 +504,22 @@ if (!ADB_AVAILABLE) {
     res.json({ ok: true });
   });
 
+  // Pull all user-installed (non-system) packages from the phone so the
+  // Add-app UI can offer a pick list instead of a free-text prompt. Output
+  // of `pm list packages -3` is one line per package, prefixed `package:`.
+  router.get('/apps/installed', async (req, res) => {
+    try {
+      const out = (await adbAsync('shell', 'pm list packages -3')).toString();
+      const pkgs = out.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.startsWith('package:'))
+        .map(l => l.slice('package:'.length))
+        .filter(Boolean)
+        .sort();
+      res.json(pkgs);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   router.post('/install', async (req, res) => {
     const { apkPath } = req.body || {};
     if (!apkPath) return res.status(400).json({ error: 'apkPath required' });

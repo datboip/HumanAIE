@@ -666,6 +666,61 @@
     margin-top: 4px;
   }
   .launcher-add-btn:hover { color: #3ddc84; border-color: #3ddc84; }
+  /* Inline Add-app form — replaces window.prompt() with a UI panel that
+     populates the package field from the phone's installed apps. */
+  #android-launcher-add-form {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #252525;
+  }
+  #android-launcher-add-form.shown { display: block; }
+  .launcher-form-label {
+    display: block;
+    font-size: 10px;
+    color: #888;
+    margin: 4px 0 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  #android-launcher-add-form select,
+  #android-launcher-add-form input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0a0a0a;
+    color: #ddd;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 5px 7px;
+    font-family: inherit;
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  #android-launcher-add-form input:focus,
+  #android-launcher-add-form select:focus {
+    outline: none;
+    border-color: #3ddc84;
+  }
+  .launcher-form-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .launcher-form-cancel,
+  .launcher-form-save {
+    flex: 1;
+    background: transparent;
+    color: #888;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    padding: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .launcher-form-cancel:hover { color: #aaa; border-color: #444; }
+  .launcher-form-save { color: #3ddc84; border-color: #3ddc84; }
+  .launcher-form-save:hover { background: #143018; }
 
   .ac-side-btn {
     width: 36px;
@@ -972,7 +1027,20 @@
       <button id="android-launcher-toggle" onclick="toggleLauncher(event)" title="Launch an app">🚀 Launch</button>
       <div id="android-launcher-popup">
         <div id="android-launcher-list"></div>
-        <button class="launcher-add-btn" onclick="addAppToFavorites(event)">+ Add app</button>
+        <button class="launcher-add-btn" onclick="openAddAppForm(event)">+ Add app</button>
+        <div id="android-launcher-add-form">
+          <label class="launcher-form-label">Package</label>
+          <select id="add-app-pkg-select">
+            <option value="">— Pick installed app —</option>
+          </select>
+          <input id="add-app-pkg-input" type="text" placeholder="or type package (com.example.app)">
+          <label class="launcher-form-label">Name</label>
+          <input id="add-app-name-input" type="text" placeholder="Display name">
+          <div class="launcher-form-row">
+            <button class="launcher-form-cancel" onclick="closeAddAppForm(event)">Cancel</button>
+            <button class="launcher-form-save"   onclick="saveAddAppForm(event)">Save</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1884,19 +1952,75 @@
       });
     } catch (e) { console.warn('loadLauncherList failed', e); }
   }
-  window.addAppToFavorites = function(event) {
+  // Derive a human-friendly default name from a package id, e.g.
+  // 'com.instagram.android' → 'Instagram'. Picks the most distinctive
+  // segment, skipping common suffixes/prefixes.
+  function nameFromPkg(pkg) {
+    if (!pkg) return '';
+    var parts = pkg.split('.').filter(Boolean);
+    var skip = { com:1, org:1, net:1, app:1, android:1, mobile:1, io:1, co:1 };
+    var pick = '';
+    for (var i = parts.length - 1; i >= 0; i--) {
+      if (!skip[parts[i].toLowerCase()]) { pick = parts[i]; break; }
+    }
+    if (!pick) pick = parts[parts.length - 1] || pkg;
+    return pick.charAt(0).toUpperCase() + pick.slice(1);
+  }
+  window.openAddAppForm = function(event) {
     if (event) event.stopPropagation();
-    var name = prompt('App name (e.g. Instagram):');
-    if (!name) return;
-    var pkg = prompt('Package name (e.g. com.instagram.android):');
-    if (!pkg) return;
+    var form = document.getElementById('android-launcher-add-form');
+    if (!form) return;
+    form.classList.add('shown');
+    document.getElementById('add-app-pkg-input').value = '';
+    document.getElementById('add-app-name-input').value = '';
+    var sel = document.getElementById('add-app-pkg-select');
+    sel.innerHTML = '<option value="">— Loading installed apps... —</option>';
+    fetch('/android/apps/installed')
+      .then(function(r) { return r.json(); })
+      .then(function(pkgs) {
+        sel.innerHTML = '<option value="">— Pick installed app —</option>';
+        if (Array.isArray(pkgs)) {
+          pkgs.forEach(function(p) {
+            var opt = document.createElement('option');
+            opt.value = p; opt.textContent = p;
+            sel.appendChild(opt);
+          });
+        }
+      })
+      .catch(function() {
+        sel.innerHTML = '<option value="">— Could not load (type manually) —</option>';
+      });
+  };
+  window.closeAddAppForm = function(event) {
+    if (event) event.stopPropagation();
+    var form = document.getElementById('android-launcher-add-form');
+    if (form) form.classList.remove('shown');
+  };
+  // When user picks from dropdown, copy into text field + auto-fill name.
+  document.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'add-app-pkg-select') {
+      var pkg = e.target.value;
+      if (pkg) {
+        document.getElementById('add-app-pkg-input').value = pkg;
+        var nameField = document.getElementById('add-app-name-input');
+        if (!nameField.value) nameField.value = nameFromPkg(pkg);
+      }
+    }
+  });
+  window.saveAddAppForm = function(event) {
+    if (event) event.stopPropagation();
+    var pkg  = document.getElementById('add-app-pkg-input').value.trim();
+    var name = document.getElementById('add-app-name-input').value.trim();
+    if (!pkg) { alert('Package is required'); return; }
+    if (!name) name = nameFromPkg(pkg);
     fetch('/android/apps', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), pkg: pkg.trim() }),
+      body: JSON.stringify({ name: name, pkg: pkg }),
     }).then(function(r) { return r.json(); })
       .then(function(d) {
-        if (d && d.error) alert('Add failed: ' + d.error);
+        if (d && d.error) { alert('Add failed: ' + d.error); return; }
+        closeAddAppForm();
         loadLauncherList();
       })
       .catch(function(err) { console.warn('add app failed', err); });
