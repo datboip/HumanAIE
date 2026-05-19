@@ -131,10 +131,14 @@ if (!ADB_AVAILABLE) {
         'screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout']);
       h264FfmpegProc = spawn('ffmpeg', [
         '-loglevel', 'error',
-        // Start emitting frames immediately — without these, ffmpeg buffers
-        // 5+ seconds before producing the first output frame because it tries
-        // to probe the stream for codec params.
-        '-probesize', '32', '-analyzeduration', '0', '-fflags', '+nobuffer',
+        // +genpts generates PTS for the live stream (screenrecord doesn't
+        // emit container-level PTS, only NAL units). probesize must be big
+        // enough for ffmpeg to find SPS/PPS — 32 bytes is way too small and
+        // the decoder silently produces 0 frames. analyzeduration:0 skips
+        // the time-based probe so we don't sit idle for ~5s at start.
+        '-fflags', '+genpts',
+        '-probesize', '100000',
+        '-analyzeduration', '0',
         '-f', 'h264', '-i', 'pipe:0',
         // Downscale to 540px wide — full 1080×2340 MJPEG encoding maxed out
         // at 1.4 fps real-time on the host CPU; 540 wide gets us back to
