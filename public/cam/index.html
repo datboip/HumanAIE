@@ -1486,6 +1486,11 @@
     // Keep the browser navbar visible — Handroid is a tab, not a mode. Phone-specific controls live in side panels.
     var browserSplash = document.getElementById('splash');
     if (browserSplash) browserSplash.style.display = 'none';
+    // CRITICAL: clear the splashVisible flag too. The pointer handlers gate on
+    // state.splashVisible to suppress input during the browser welcome screen;
+    // hiding the browser splash via inline display:none doesn't update the JS
+    // flag, so all clicks/drags in HANDROID would silently no-op without this.
+    state.splashVisible = false;
     if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus();
   }
 
