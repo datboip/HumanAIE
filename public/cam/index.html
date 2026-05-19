@@ -199,6 +199,22 @@
   .phone-tab-indicator[data-state="connected"] { background: #0f0; }
   .phone-tab-indicator[data-state="disconnected"] { background: #f00; }
   .phone-tab-indicator[data-state="no-adb"]      { background: #888; }
+  /* Git SHA badge next to HANDROID label — surfaces the running commit so
+     you can confirm "did my pull take effect" at a glance. */
+  .phone-tab-sha {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    font-family: "Courier New", monospace;
+    font-size: 10px;
+    font-weight: normal;
+    color: #003a14;
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 2px;
+    opacity: 0.85;
+  }
+  .phone-tab-sha:empty { display: none; }
+  .phone-tab-sha.dirty { background: rgba(180, 60, 0, 0.45); color: #fff; }
 
   /* ---- Waitfor banner ---- */
   #waitfor-banner {
@@ -832,6 +848,7 @@
     <!-- Pinned green PHONE tab — always present, can't close. Switches Cam UI to Android mode. -->
     <div id="phone-tab" class="tab phone-tab" title="Android phone view">
       <span class="tab-title">📱 HANDROID</span>
+      <span id="phone-tab-sha" class="phone-tab-sha" title="Running git commit"></span>
       <span id="phone-tab-indicator" class="phone-tab-indicator" data-state="unknown"></span>
     </div>
   </div>
@@ -2756,12 +2773,21 @@
     }
     loadSplashData();
 
-    // Fetch version from server and populate all ver-tag spans
+    // Fetch version from server and populate all ver-tag spans + the
+    // HANDROID-tab SHA badge. The SHA confirms which commit is running \u2014
+    // dirty marker (asterisk + red bg) flags uncommitted local changes.
     apiGet('/version').then(function(d) {
-      if (d && d.version) {
+      if (!d) return;
+      if (d.version) {
         var tags = document.querySelectorAll('.ver-tag');
         for (var i = 0; i < tags.length; i++) tags[i].textContent = 'v' + d.version;
         document.title = 'HumanAIE v' + d.version + ' \u2014 Human AI Eyes';
+      }
+      var sha = document.getElementById('phone-tab-sha');
+      if (sha && d.git_sha) {
+        sha.textContent = d.git_sha + (d.git_dirty ? '*' : '');
+        if (d.git_dirty) sha.classList.add('dirty');
+        sha.title = 'Running git ' + d.git_sha + (d.git_dirty ? ' (dirty \u2014 uncommitted changes)' : '');
       }
     });
 

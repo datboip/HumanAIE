@@ -12,7 +12,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 chromium.use(StealthPlugin());
 const path = require('path');
 const fs = require('fs');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 
 // ── Human takeover flag ──────────────────────────────────────────────────────
 let humanControl = false;
@@ -30,6 +30,24 @@ process.on('unhandledRejection', (reason) => {
 const _pkg = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'package.json'), 'utf-8'));
 const APP_VERSION = _pkg.version || '0.0.0';
 const APP_NAME = _pkg.name || 'humanaie';
+
+// Git build info — captured at module load so the running server reports
+// exactly what's checked out. The frontend reads /version to surface this
+// on the HANDROID tab, which is the quickest way to verify "did my pull
+// land before the browser reload".
+let APP_GIT_SHA = '';
+let APP_GIT_DIRTY = false;
+try {
+  APP_GIT_SHA = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+    cwd: __dirname, timeout: 1500, stdio: ['ignore', 'pipe', 'ignore'],
+  }).toString().trim();
+} catch {}
+try {
+  const dirty = execFileSync('git', ['status', '--porcelain'], {
+    cwd: __dirname, timeout: 1500, stdio: ['ignore', 'pipe', 'ignore'],
+  }).toString().trim();
+  APP_GIT_DIRTY = dirty.length > 0;
+} catch {}
 
 const app = express();
 app.use(express.json());
@@ -360,7 +378,12 @@ function generateOutputs(sess) {
 }
 
 app.get('/version', (req, res) => {
-  res.json({ name: APP_NAME, version: APP_VERSION });
+  res.json({
+    name: APP_NAME,
+    version: APP_VERSION,
+    git_sha: APP_GIT_SHA,
+    git_dirty: APP_GIT_DIRTY,
+  });
 });
 
 // ── Live status — public "browser is live" indicator ────────────────────────────
