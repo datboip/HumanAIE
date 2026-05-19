@@ -1016,7 +1016,9 @@
               <button class="nav-btn" style="height:30px;font-size:11px;padding:0" onclick="phoneSwipe('left')">⬅ Back</button>
               <button class="nav-btn" style="height:30px;font-size:10px;padding:0" onclick="phoneSwipe('right')">➡ Fwd</button>
             </div>
-            <div class="popup-hint">Click = Tap. Drag = Swipe.</div>
+            <div class="popup-title" style="margin-top:6px">Calibration</div>
+            <button class="nav-btn" style="width:100%;height:30px;font-size:11px;padding:0" onclick="calibrateTaps()" title="Fire 9 taps at known phone coords with visual markers">🎯 Calibrate taps</button>
+            <div class="popup-hint">Enable Developer Options → Show taps on phone first</div>
           </div>
         </div>
       </div>
@@ -1585,6 +1587,74 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ keycode: keycode }),
     }).catch(function(e) { console.warn('phoneKey failed', e); });
+  };
+
+  // Coord-pipeline calibration. Fires 9 taps at known phone-pixel positions
+  // (corners, edge midpoints, center). Each tap shows a labeled marker on
+  // the viewport at the predicted rendered position. Compare with phone's
+  // "Show taps" (Developer Options) to verify the coord mapping is correct.
+  function phoneToScreen(phoneX, phoneY) {
+    if (!$viewport) return null;
+    var rect = $viewport.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    var nw = (androidMode && androidStatus.screen_w) ? androidStatus.screen_w : $viewport.naturalWidth;
+    var nh = (androidMode && androidStatus.screen_h) ? androidStatus.screen_h : $viewport.naturalHeight;
+    if (!nw || !nh) return null;
+    // Same letterbox math as screenToPhone, inverted.
+    var imgAspect = nw / nh;
+    var boxAspect = rect.width / rect.height;
+    var renderW, renderH, offsetX, offsetY;
+    if (imgAspect > boxAspect) {
+      renderW = rect.width; renderH = rect.width / imgAspect;
+      offsetX = 0; offsetY = (rect.height - renderH) / 2;
+    } else {
+      renderH = rect.height; renderW = rect.height * imgAspect;
+      offsetX = (rect.width - renderW) / 2; offsetY = 0;
+    }
+    return {
+      x: rect.left + offsetX + (phoneX / nw) * renderW,
+      y: rect.top  + offsetY + (phoneY / nh) * renderH,
+    };
+  }
+  window.calibrateTaps = function() {
+    if (!androidMode) {
+      alert('Calibration only works in HANDROID mode.');
+      return;
+    }
+    var W = androidStatus.screen_w || 1080;
+    var H = androidStatus.screen_h || 2340;
+    // 9 positions: 10%/50%/90% of width × 10%/50%/90% of height
+    var positions = [];
+    var xs = [0.1, 0.5, 0.9], ys = [0.1, 0.5, 0.9];
+    var labels = ['TL','TC','TR','ML','C','MR','BL','BC','BR'];
+    var i = 0;
+    for (var yi = 0; yi < ys.length; yi++) {
+      for (var xi = 0; xi < xs.length; xi++) {
+        positions.push({
+          px: Math.round(W * xs[xi]),
+          py: Math.round(H * ys[yi]),
+          label: labels[i++],
+        });
+      }
+    }
+    positions.forEach(function(p, idx) {
+      setTimeout(function() {
+        var ss = phoneToScreen(p.px, p.py);
+        if (ss) {
+          var wr = $viewportWrapper.getBoundingClientRect();
+          var marker = document.createElement('div');
+          marker.style.cssText = 'position:absolute;left:' + (ss.x - wr.left - 12) + 'px;top:' + (ss.y - wr.top - 12) + 'px;width:24px;height:24px;border-radius:50%;background:rgba(255,153,51,0.7);border:2px solid #fff;color:#000;font-family:monospace;font-size:10px;font-weight:bold;display:flex;align-items:center;justify-content:center;z-index:25;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,0.5)';
+          marker.textContent = p.label;
+          $viewportWrapper.appendChild(marker);
+          setTimeout(function() { marker.remove(); }, 4000);
+        }
+        fetch('/android/tap', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ x: p.px, y: p.py }),
+        }).catch(function(e) { console.warn('calibration tap failed', e); });
+      }, idx * 600);
+    });
   };
 
   window.phoneScreenshot = function() {
@@ -2350,18 +2420,19 @@
     $viewportWrapper.appendChild(svg);
     return svg;
   }
-  function updateDragSvg(startClientX, startClientY, curClientX, curClientY) {
+  function updateDragSvg(startClientX, startClientY, curClientX, curClientY, color) {
     var svg = getOrCreateDragSvg();
     var wr = $viewportWrapper.getBoundingClientRect();
     var lx1 = startClientX - wr.left, ly1 = startClientY - wr.top;
     var lx2 = curClientX   - wr.left, ly2 = curClientY   - wr.top;
+    var c = color || '#3ddc84';  // green=quick swipe, orange=drag-hold
     svg.style.display = 'block';
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     var SVG = 'http://www.w3.org/2000/svg';
     var line = document.createElementNS(SVG, 'line');
     line.setAttribute('x1', lx1); line.setAttribute('y1', ly1);
     line.setAttribute('x2', lx2); line.setAttribute('y2', ly2);
-    line.setAttribute('stroke', '#3ddc84');
+    line.setAttribute('stroke', c);
     line.setAttribute('stroke-width', '2');
     line.setAttribute('stroke-dasharray', '5,3');
     line.setAttribute('opacity', '0.9');
@@ -2374,7 +2445,7 @@
     var a2y = ly2 - al * Math.sin(angle + 0.4);
     var arrow = document.createElementNS(SVG, 'polyline');
     arrow.setAttribute('points', a1x + ',' + a1y + ' ' + lx2 + ',' + ly2 + ' ' + a2x + ',' + a2y);
-    arrow.setAttribute('stroke', '#3ddc84');
+    arrow.setAttribute('stroke', c);
     arrow.setAttribute('stroke-width', '2');
     arrow.setAttribute('fill', 'none');
     arrow.setAttribute('opacity', '0.9');
@@ -2382,7 +2453,7 @@
     var dot = document.createElementNS(SVG, 'circle');
     dot.setAttribute('cx', lx1); dot.setAttribute('cy', ly1);
     dot.setAttribute('r', '5');
-    dot.setAttribute('fill', '#3ddc84');
+    dot.setAttribute('fill', c);
     dot.setAttribute('opacity', '0.85');
     svg.appendChild(dot);
   }
@@ -2421,11 +2492,15 @@
   // ---- Unified pointer handler for the viewport ----
   // One state machine handles tap-vs-drag and dispatches to the right endpoint
   // based on interactionMode (and androidMode — added in a later commit).
-  var pointerState = null;  // { id, startClientX, startClientY, startVirtualX, startVirtualY, startNaturalW, startNaturalH, startTime, dragged }
+  var pointerState = null;  // { id, startClientX, startClientY, startVirtualX, startVirtualY, startNaturalW, startNaturalH, startTime, dragged, longPressTimer, isDragHold }
   // 8 px Euclidean (Math.hypot) — matches the working hivecam/nanodroidcam
   // threshold. Looser than the old 5 px per-axis, but far less prone to
   // accidentally promoting micro-jitter taps into swipes.
   var DRAG_THRESHOLD_PX = 8;
+  // Hold mouse still for this long before moving → drag-and-hold (long
+  // duration ADB swipe ~ 1500ms). Anything else is a quick swipe.
+  var LONG_PRESS_MS = 500;
+  var DRAG_HOLD_DUR_MS = 1500;
 
   $viewport.addEventListener('pointerdown', function(e) {
     if (!e.isPrimary) return;
@@ -2448,7 +2523,18 @@
       startNaturalH: $viewport.naturalHeight,
       startTime: e.timeStamp,
       dragged: false,
+      isDragHold: false,
+      longPressTimer: null,
     };
+    // Long-press detection: if the user holds still for LONG_PRESS_MS without
+    // moving, the next move becomes a drag-and-hold (long ADB swipe dur, used
+    // for icon rearrangement / widget drag). If they move within the window,
+    // the timer is cleared in pointermove and it stays a quick swipe.
+    pointerState.longPressTimer = setTimeout(function() {
+      if (pointerState && !pointerState.dragged) {
+        pointerState.isDragHold = true;
+      }
+    }, LONG_PRESS_MS);
     // HANDROID mode always uses drag-like cursor + preventDefault — the viewport
     // should feel like a phone screen regardless of which mode toggle is active.
     if (androidMode || state.interactionMode === 'drag') {
@@ -2470,12 +2556,23 @@
       var dy = e.clientY - pointerState.startClientY;
       if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
         pointerState.dragged = true;
+        // Movement before long-press window expired → it's a quick swipe,
+        // not a drag-hold. Cancel the long-press timer so isDragHold stays false.
+        if (pointerState.longPressTimer && !pointerState.isDragHold) {
+          clearTimeout(pointerState.longPressTimer);
+          pointerState.longPressTimer = null;
+        }
       }
     }
     // Once recognized as a drag, draw the start-dot + line + arrow so the
-    // user sees exactly which swipe will fire on release.
+    // user sees exactly which swipe will fire on release. Orange when
+    // drag-hold (long-press preceded the move), green for a quick swipe.
     if (pointerState.dragged) {
-      updateDragSvg(pointerState.startClientX, pointerState.startClientY, e.clientX, e.clientY);
+      updateDragSvg(
+        pointerState.startClientX, pointerState.startClientY,
+        e.clientX, e.clientY,
+        pointerState.isDragHold ? '#ff9933' : '#3ddc84'
+      );
     }
   });
 
@@ -2483,6 +2580,7 @@
     if (!pointerState || e.pointerId !== pointerState.id) return;
     var ps = pointerState;
     pointerState = null;
+    if (ps.longPressTimer) clearTimeout(ps.longPressTimer);
     clearDragSvg();
     if (androidMode || state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
 
@@ -2506,11 +2604,17 @@
         var startP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
         var endP   = screenToPhone(e);
         if (!startP || !endP) return;
-        var dur = e.timeStamp - ps.startTime;
-        // Compact dur range so the swipe registers as a fling on Android.
-        // 1000ms felt like a slow drag-and-hold — apps wouldn't trigger
-        // navigation/carousel gestures. Matches hivedroid's 300ms target.
-        if (dur < 100) dur = 100; else if (dur > 300) dur = 300;
+        var dur;
+        if (ps.isDragHold) {
+          // Long-press preceded the move → drag-and-hold (rearrange icon,
+          // drag widget). Android needs a sustained press of ~1s+ to
+          // register as drag-and-drop instead of a swipe.
+          dur = DRAG_HOLD_DUR_MS;
+        } else {
+          // Quick swipe → compact dur range so Android sees it as a fling.
+          dur = e.timeStamp - ps.startTime;
+          if (dur < 100) dur = 100; else if (dur > 300) dur = 300;
+        }
         recordAction('swipe', { x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur });
         fetch('/android/swipe', {
           method: 'POST',
@@ -2562,6 +2666,7 @@
 
   $viewport.addEventListener('pointercancel', function(e) {
     if (pointerState && e.pointerId === pointerState.id) {
+      if (pointerState.longPressTimer) clearTimeout(pointerState.longPressTimer);
       pointerState = null;
       clearDragSvg();
       if (androidMode || state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
