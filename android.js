@@ -121,44 +121,31 @@ if (!ADB_AVAILABLE) {
   //   which decodes h264 and re-encodes as MJPEG frames piped to stdout. Each
   //   JPEG frame (FFD8...FFD9) is broadcast via pushFrame(). This sustains
   //   ~25-30 FPS where the screencap-per-frame loop manages ~3-12.
-  let h264AdbProc = null;
-  let h264FfmpegProc = null;
+  let h264ShellProc = null;
   let h264RestartTimer = null;
   function startH264Stream() {
     h264RestartTimer = null;
+    // Single bash pipeline: adb's stdout goes directly to ffmpeg's stdin
+    // via an OS-level pipe, and Node only reads the final MJPEG output.
+    // Going through Node's .pipe() between them was causing Samsung
+    // screenrecord streams to never flush enough data for ffmpeg's
+    // h264 demuxer to lock on, even with +genpts +probesize 100000.
+    // OS pipe avoids that intermediate buffering entirely.
+    const cmd =
+      `${adbPath} -s ${SERIAL_REF.current} exec-out screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout` +
+      ` | ffmpeg -loglevel error -fflags +genpts -probesize 100000 -analyzeduration 0` +
+      ` -f h264 -i pipe:0 -vf scale=540:-2` +
+      ` -f image2pipe -vcodec mjpeg -q:v 5 pipe:1`;
     try {
-      h264AdbProc = spawn(adbPath, ['-s', SERIAL_REF.current, 'exec-out',
-        'screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout']);
-      h264FfmpegProc = spawn('ffmpeg', [
-        '-loglevel', 'error',
-        // +genpts generates PTS for the live stream (screenrecord doesn't
-        // emit container-level PTS, only NAL units). probesize must be big
-        // enough for ffmpeg to find SPS/PPS — 32 bytes is way too small and
-        // the decoder silently produces 0 frames. analyzeduration:0 skips
-        // the time-based probe so we don't sit idle for ~5s at start.
-        '-fflags', '+genpts',
-        '-probesize', '100000',
-        '-analyzeduration', '0',
-        '-f', 'h264', '-i', 'pipe:0',
-        // Downscale to 540px wide — full 1080×2340 MJPEG encoding maxed out
-        // at 1.4 fps real-time on the host CPU; 540 wide gets us back to
-        // ~25 fps. Matches hivedroid. Coord mapping uses phone's real screen
-        // dims (queried separately via `wm size`), not these stream dims.
-        '-vf', 'scale=540:-2',
-        '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '5', 'pipe:1',
-      ]);
+      h264ShellProc = spawn('bash', ['-c', cmd], { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
-      // ffmpeg likely missing — fall back permanently to the screencap loop.
       console.log('[android] h264 stream unavailable (' + e.message + '), screencap fallback only');
       return;
     }
-    h264AdbProc.stdout.pipe(h264FfmpegProc.stdin);
-    h264AdbProc.stderr.on('data', () => {});
-    h264FfmpegProc.stderr.on('data', () => {});
+    h264ShellProc.stderr.on('data', () => {});
     let frameBuf = Buffer.alloc(0);
-    h264FfmpegProc.stdout.on('data', chunk => {
+    h264ShellProc.stdout.on('data', chunk => {
       frameBuf = Buffer.concat([frameBuf, chunk]);
-      // Find JPEG SOI/EOI boundaries (FFD8...FFD9) and emit each frame.
       let start = -1;
       for (let i = 0; i < frameBuf.length - 1; i++) {
         if (frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD8) start = i;
@@ -169,19 +156,16 @@ if (!ADB_AVAILABLE) {
           i = -1;
         }
       }
-      if (frameBuf.length > 2 * 1024 * 1024) frameBuf = Buffer.alloc(0); // safety drain
+      if (frameBuf.length > 2 * 1024 * 1024) frameBuf = Buffer.alloc(0);
     });
     const restart = () => {
-      try { if (h264AdbProc)    h264AdbProc.kill(); } catch {}
-      try { if (h264FfmpegProc) h264FfmpegProc.stdin.end(); } catch {}
-      h264AdbProc = null; h264FfmpegProc = null;
+      try { if (h264ShellProc) h264ShellProc.kill(); } catch {}
+      h264ShellProc = null;
       if (h264RestartTimer) return;
       h264RestartTimer = setTimeout(startH264Stream, 2000);
     };
-    h264FfmpegProc.on('close', restart);
-    h264FfmpegProc.on('error', restart);
-    h264AdbProc.on('close', () => { try { h264FfmpegProc && h264FfmpegProc.stdin.end(); } catch {} });
-    h264AdbProc.on('error', restart);
+    h264ShellProc.on('close', restart);
+    h264ShellProc.on('error', restart);
   }
   startH264Stream();
 
