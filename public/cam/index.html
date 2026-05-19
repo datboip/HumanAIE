@@ -511,22 +511,25 @@
     70% { opacity: 1; }
     100% { opacity: 0; }
   }
-  /* AI/Human cursor */
+  /* AI/Human cursor — small dot indicating where the last click landed.
+     Green for AI, red for human. Was a 24px arrow, but it obscured the
+     viewport more than it helped. */
   #ai-cursor {
     position: absolute;
     pointer-events: none;
     z-index: 30;
-    width: 24px;
-    height: 24px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #33cc55;
+    border: 2px solid #fff;
+    box-sizing: border-box;
     filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
     transition: left 0.5s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
     display: none;
   }
-  #ai-cursor svg { width: 24px; height: 24px; }
-  #ai-cursor .cursor-fill { fill: #33cc55; }
-  #ai-cursor .cursor-stroke { fill: #fff; }
-  #ai-cursor.human .cursor-fill { fill: #ff3333; }
-  #ai-cursor.human .cursor-stroke { fill: #fff; }
+  #ai-cursor.human { background: #ff3333; }
+  #ai-cursor svg { display: none; } /* legacy arrow SVG inside — hide */
 
   /* ---- Status bar ---- */
   #statusbar {
@@ -1865,8 +1868,9 @@
       $aiCursor.classList.remove('human');
     }
     $aiCursor.style.opacity = '1';
-    $aiCursor.style.left = (screenX - 6) + 'px';
-    $aiCursor.style.top = (screenY - 2) + 'px';
+    // Center the 10px dot on the click point (was -6/-2 for the arrow tip)
+    $aiCursor.style.left = (screenX - 5) + 'px';
+    $aiCursor.style.top  = (screenY - 5) + 'px';
   }
 
   function showClickEffect(relX, relY, source) {
