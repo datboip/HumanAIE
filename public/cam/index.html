@@ -2313,6 +2313,62 @@
     grid.style.height = renderH + 'px';
   }
 
+  // ---- Drag-overlay SVG (port from nanodroidcam/hivedroid) ----
+  // Shows start-dot + dashed line + arrowhead during a drag gesture so you
+  // can see exactly where your swipe started and ended before release.
+  // Lives above the viewport with pointer-events:none.
+  function getOrCreateDragSvg() {
+    var svg = document.getElementById('drag-overlay');
+    if (svg) return svg;
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'drag-overlay';
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:11;display:none;';
+    $viewportWrapper.appendChild(svg);
+    return svg;
+  }
+  function updateDragSvg(startClientX, startClientY, curClientX, curClientY) {
+    var svg = getOrCreateDragSvg();
+    var wr = $viewportWrapper.getBoundingClientRect();
+    var lx1 = startClientX - wr.left, ly1 = startClientY - wr.top;
+    var lx2 = curClientX   - wr.left, ly2 = curClientY   - wr.top;
+    svg.style.display = 'block';
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var SVG = 'http://www.w3.org/2000/svg';
+    var line = document.createElementNS(SVG, 'line');
+    line.setAttribute('x1', lx1); line.setAttribute('y1', ly1);
+    line.setAttribute('x2', lx2); line.setAttribute('y2', ly2);
+    line.setAttribute('stroke', '#3ddc84');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-dasharray', '5,3');
+    line.setAttribute('opacity', '0.9');
+    svg.appendChild(line);
+    var angle = Math.atan2(ly2 - ly1, lx2 - lx1);
+    var al = 10;
+    var a1x = lx2 - al * Math.cos(angle - 0.4);
+    var a1y = ly2 - al * Math.sin(angle - 0.4);
+    var a2x = lx2 - al * Math.cos(angle + 0.4);
+    var a2y = ly2 - al * Math.sin(angle + 0.4);
+    var arrow = document.createElementNS(SVG, 'polyline');
+    arrow.setAttribute('points', a1x + ',' + a1y + ' ' + lx2 + ',' + ly2 + ' ' + a2x + ',' + a2y);
+    arrow.setAttribute('stroke', '#3ddc84');
+    arrow.setAttribute('stroke-width', '2');
+    arrow.setAttribute('fill', 'none');
+    arrow.setAttribute('opacity', '0.9');
+    svg.appendChild(arrow);
+    var dot = document.createElementNS(SVG, 'circle');
+    dot.setAttribute('cx', lx1); dot.setAttribute('cy', ly1);
+    dot.setAttribute('r', '5');
+    dot.setAttribute('fill', '#3ddc84');
+    dot.setAttribute('opacity', '0.85');
+    svg.appendChild(dot);
+  }
+  function clearDragSvg() {
+    var svg = document.getElementById('drag-overlay');
+    if (!svg) return;
+    svg.style.display = 'none';
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+  }
+
   var gridTrackTimer = null;
   window.toggleGrid = function(event) {
     var grid = document.getElementById('viewport-grid');
@@ -2392,12 +2448,18 @@
         pointerState.dragged = true;
       }
     }
+    // Once recognized as a drag, draw the start-dot + line + arrow so the
+    // user sees exactly which swipe will fire on release.
+    if (pointerState.dragged) {
+      updateDragSvg(pointerState.startClientX, pointerState.startClientY, e.clientX, e.clientY);
+    }
   });
 
   $viewport.addEventListener('pointerup', function(e) {
     if (!pointerState || e.pointerId !== pointerState.id) return;
     var ps = pointerState;
     pointerState = null;
+    clearDragSvg();
     if (androidMode || state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
 
     var endCoords = screenToVirtual(e);
@@ -2474,6 +2536,7 @@
   $viewport.addEventListener('pointercancel', function(e) {
     if (pointerState && e.pointerId === pointerState.id) {
       pointerState = null;
+      clearDragSvg();
       if (androidMode || state.interactionMode === 'drag') $viewport.style.cursor = 'grab';
     }
   });
