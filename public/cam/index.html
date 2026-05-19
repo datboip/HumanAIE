@@ -251,6 +251,14 @@
     object-fit: contain;
     cursor: crosshair;
     image-rendering: auto;
+    /* touch-action:none blocks the browser from interpreting our pointer
+       gestures as scroll/zoom — without this, a vertical drag becomes a
+       page-scroll on touch devices and our pointermove never fires with
+       cancelable behavior. user-select:none kills the text-select-on-drag
+       affordance that browsers add by default. */
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   #viewport.visible { display: block; }
 
@@ -2317,7 +2325,10 @@
   // One state machine handles tap-vs-drag and dispatches to the right endpoint
   // based on interactionMode (and androidMode — added in a later commit).
   var pointerState = null;  // { id, startClientX, startClientY, startVirtualX, startVirtualY, startNaturalW, startNaturalH, startTime, dragged }
-  var DRAG_THRESHOLD_PX = 5;
+  // 8 px Euclidean (Math.hypot) — matches the working hivecam/nanodroidcam
+  // threshold. Looser than the old 5 px per-axis, but far less prone to
+  // accidentally promoting micro-jitter taps into swipes.
+  var DRAG_THRESHOLD_PX = 8;
 
   $viewport.addEventListener('pointerdown', function(e) {
     if (!e.isPrimary) return;
@@ -2351,16 +2362,19 @@
 
   $viewport.addEventListener('pointermove', function(e) {
     if (!pointerState || e.pointerId !== pointerState.id) return;
+    // ALWAYS preventDefault during a tracked gesture — even in browser-mode
+    // click. Without this, the browser can hijack vertical drags as page
+    // scrolls (on touch hardware especially) and pointermove will only fire
+    // a few times before being canceled, breaking drag detection.
+    e.preventDefault();
     if (!pointerState.dragged) {
-      // Threshold is in CSS pixels — virtual-coord deltas are too sensitive on
-      // a 500px-wide viewport rendering a 1080-2400px phone screen (5 virtual ≈ 2 CSS px).
-      var dx = Math.abs(e.clientX - pointerState.startClientX);
-      var dy = Math.abs(e.clientY - pointerState.startClientY);
-      if (dx >= DRAG_THRESHOLD_PX || dy >= DRAG_THRESHOLD_PX) {
+      // CSS-pixel Euclidean distance, matches hivecam.
+      var dx = e.clientX - pointerState.startClientX;
+      var dy = e.clientY - pointerState.startClientY;
+      if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
         pointerState.dragged = true;
       }
     }
-    if (androidMode || state.interactionMode === 'drag') e.preventDefault();
   });
 
   $viewport.addEventListener('pointerup', function(e) {
