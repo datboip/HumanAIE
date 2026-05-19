@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync, execFile } = require('node:child_process');
+const { execFileSync, execFile, spawn } = require('node:child_process');
 const express = require('express');
 
 function parseWakefulness(dumpsysOutput) {
@@ -108,7 +108,72 @@ if (!ADB_AVAILABLE) {
   }
 
   // Capture cadence is configurable via POST /android/config. Lower ms = higher FPS.
+  // (only affects the screencap fallback — the h264 stream below runs at the
+  // phone's native frame rate independent of this.)
   let captureIntervalMs = 80; // default ~12fps
+
+  // ── PRIMARY: H264 stream via screenrecord + ffmpeg ───────────────────────────
+  // Port of nanodroidcam/hivedroid's high-fps pipeline:
+  //   `adb exec-out screenrecord --output-format=h264 ...` produces a live h264
+  //   bitstream from the phone's hardware encoder. We pipe that into ffmpeg
+  //   which decodes h264 and re-encodes as MJPEG frames piped to stdout. Each
+  //   JPEG frame (FFD8...FFD9) is broadcast via pushFrame(). This sustains
+  //   ~25-30 FPS where the screencap-per-frame loop manages ~3-12.
+  let h264AdbProc = null;
+  let h264FfmpegProc = null;
+  let h264RestartTimer = null;
+  function startH264Stream() {
+    h264RestartTimer = null;
+    try {
+      h264AdbProc = spawn(adbPath, ['-s', SERIAL_REF.current, 'exec-out',
+        'screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout']);
+      h264FfmpegProc = spawn('ffmpeg', [
+        '-loglevel', 'quiet',
+        '-f', 'h264', '-i', 'pipe:0',
+        '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '5', 'pipe:1',
+      ]);
+    } catch (e) {
+      // ffmpeg likely missing — fall back permanently to the screencap loop.
+      console.log('[android] h264 stream unavailable (' + e.message + '), screencap fallback only');
+      return;
+    }
+    h264AdbProc.stdout.pipe(h264FfmpegProc.stdin);
+    h264AdbProc.stderr.on('data', () => {});
+    h264FfmpegProc.stderr.on('data', () => {});
+    let frameBuf = Buffer.alloc(0);
+    h264FfmpegProc.stdout.on('data', chunk => {
+      frameBuf = Buffer.concat([frameBuf, chunk]);
+      // Find JPEG SOI/EOI boundaries (FFD8...FFD9) and emit each frame.
+      let start = -1;
+      for (let i = 0; i < frameBuf.length - 1; i++) {
+        if (frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD8) start = i;
+        if (start !== -1 && frameBuf[i] === 0xFF && frameBuf[i + 1] === 0xD9) {
+          pushFrame(frameBuf.slice(start, i + 2));
+          frameBuf = frameBuf.slice(i + 2);
+          start = -1;
+          i = -1;
+        }
+      }
+      if (frameBuf.length > 2 * 1024 * 1024) frameBuf = Buffer.alloc(0); // safety drain
+    });
+    const restart = () => {
+      try { if (h264AdbProc)    h264AdbProc.kill(); } catch {}
+      try { if (h264FfmpegProc) h264FfmpegProc.stdin.end(); } catch {}
+      h264AdbProc = null; h264FfmpegProc = null;
+      if (h264RestartTimer) return;
+      h264RestartTimer = setTimeout(startH264Stream, 2000);
+    };
+    h264FfmpegProc.on('close', restart);
+    h264FfmpegProc.on('error', restart);
+    h264AdbProc.on('close', () => { try { h264FfmpegProc && h264FfmpegProc.stdin.end(); } catch {} });
+    h264AdbProc.on('error', restart);
+  }
+  startH264Stream();
+
+  // ── FALLBACK: per-frame screencap loop ───────────────────────────────────────
+  // Still runs alongside the h264 stream. If h264 is healthy it produces
+  // frames faster and dominates the broadcast; if h264 dies between restarts,
+  // screencap keeps frames flowing so the viewport never goes fully stale.
 
   // Async screencap — execFile (not execFileSync) so the event loop stays free
   // while ADB is in flight. encoding:'buffer' gives us raw PNG bytes back.
