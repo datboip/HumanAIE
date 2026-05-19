@@ -1260,6 +1260,9 @@
   function showSplash() {
     state.splashVisible = true;
     $splash.classList.remove('hidden');
+    // switchToAndroidMode sets inline display:none on $splash. Clear that
+    // so .hidden/.visible class rules can take effect when returning home.
+    $splash.style.display = '';
     $viewport.classList.remove('visible');
     stopFramePolling();
   }
@@ -1330,6 +1333,11 @@
     state.currentUrl = '';
     $urlBar.value = '';
     $statusText.textContent = 'Document: Done';
+    // If we're currently in HANDROID, exit to browser mode first so the
+    // phone tab deactivates. Then show the welcome splash.
+    if (androidMode && typeof switchToBrowserMode === 'function') {
+      switchToBrowserMode();
+    }
     showSplash();
   };
 
