@@ -97,8 +97,10 @@ if (!ADB_AVAILABLE) {
   const MJPEG_CLIENTS = new Set();
   const BOUNDARY = 'frame';
 
+  let lastFrameTime = 0;
   function pushFrame(buf) {
     if (!buf || buf.length < 1000) return;
+    lastFrameTime = Date.now();
     frameCache = buf;
     const header = `--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${buf.length}\r\n\r\n`;
     for (const client of MJPEG_CLIENTS) {
@@ -129,6 +131,7 @@ if (!ADB_AVAILABLE) {
         'screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout']);
       h264FfmpegProc = spawn('ffmpeg', [
         '-loglevel', 'quiet',
+        '-fflags', 'nobuffer', '-flags', 'low_delay', // minimize ffmpeg latency
         '-f', 'h264', '-i', 'pipe:0',
         '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '5', 'pipe:1',
       ]);
@@ -187,10 +190,16 @@ if (!ADB_AVAILABLE) {
 
   (async function captureLoop() {
     while (true) {
-      try {
-        const buf = await screencapAsync();
-        if (buf && buf.length > 1000) pushFrame(buf);
-      } catch { /* phone offline, emulator rebooting, etc. */ }
+      // Only fire screencap if h264 hasn't delivered a frame recently —
+      // otherwise both paths compete for the same ADB serial connection and
+      // taps/swipes get queued behind the screencap PNG transfer.
+      const h264Stale = (Date.now() - lastFrameTime) > 2000;
+      if (h264Stale) {
+        try {
+          const buf = await screencapAsync();
+          if (buf && buf.length > 1000) pushFrame(buf);
+        } catch { /* phone offline, emulator rebooting, etc. */ }
+      }
       await new Promise(r => setTimeout(r, captureIntervalMs));
     }
   })();

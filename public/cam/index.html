@@ -2483,7 +2483,10 @@
         var endP   = screenToPhone(e);
         if (!startP || !endP) return;
         var dur = e.timeStamp - ps.startTime;
-        if (dur < 100) dur = 100; else if (dur > 1000) dur = 1000;
+        // Compact dur range so the swipe registers as a fling on Android.
+        // 1000ms felt like a slow drag-and-hold — apps wouldn't trigger
+        // navigation/carousel gestures. Matches hivedroid's 300ms target.
+        if (dur < 100) dur = 100; else if (dur > 300) dur = 300;
         recordAction('swipe', { x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur });
         fetch('/android/swipe', {
           method: 'POST',
