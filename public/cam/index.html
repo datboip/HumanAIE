@@ -1773,11 +1773,21 @@
   // brings new natural dimensions).
   function screenToPhone(e) {
     if (!$viewport) return null;
-    var nw = $viewport.naturalWidth;
-    var nh = $viewport.naturalHeight;
-    if (!nw || !nh) return null;
     var rect = $viewport.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
+    // Output in the phone's REAL pixel coords. The h264 stream is downscaled
+    // to 540px wide for CPU reasons, so $viewport.naturalWidth would be 540 —
+    // but ADB `input tap/swipe` expects native phone coords (e.g. 1080x2340).
+    // androidStatus.screen_w/h are queried from `wm size` server-side.
+    var nw, nh;
+    if (androidMode && androidStatus.screen_w && androidStatus.screen_h) {
+      nw = androidStatus.screen_w;
+      nh = androidStatus.screen_h;
+    } else {
+      nw = $viewport.naturalWidth;
+      nh = $viewport.naturalHeight;
+    }
+    if (!nw || !nh) return null;
     var x = Math.round((e.clientX - rect.left) / rect.width  * nw);
     var y = Math.round((e.clientY - rect.top ) / rect.height * nh);
     if (x < 0) x = 0; else if (x > nw - 1) x = nw - 1;

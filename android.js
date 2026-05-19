@@ -130,9 +130,17 @@ if (!ADB_AVAILABLE) {
       h264AdbProc = spawn(adbPath, ['-s', SERIAL_REF.current, 'exec-out',
         'screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout']);
       h264FfmpegProc = spawn('ffmpeg', [
-        '-loglevel', 'quiet',
-        '-fflags', 'nobuffer', '-flags', 'low_delay', // minimize ffmpeg latency
+        '-loglevel', 'error',
+        // Start emitting frames immediately — without these, ffmpeg buffers
+        // 5+ seconds before producing the first output frame because it tries
+        // to probe the stream for codec params.
+        '-probesize', '32', '-analyzeduration', '0', '-fflags', '+nobuffer',
         '-f', 'h264', '-i', 'pipe:0',
+        // Downscale to 540px wide — full 1080×2340 MJPEG encoding maxed out
+        // at 1.4 fps real-time on the host CPU; 540 wide gets us back to
+        // ~25 fps. Matches hivedroid. Coord mapping uses phone's real screen
+        // dims (queried separately via `wm size`), not these stream dims.
+        '-vf', 'scale=540:-2',
         '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '5', 'pipe:1',
       ]);
     } catch (e) {
@@ -213,11 +221,18 @@ if (!ADB_AVAILABLE) {
     res.json({ ok: true, captureIntervalMs });
   });
 
+  // Cached phone screen dims — queried lazily from `wm size` (see getScreenDims
+  // below). Cleared on /reconnect since a new device may be a different size.
+  // Used by /android/status so the cam UI can map clicks to real phone pixel
+  // coords even when the streamed image is downscaled.
+  let cachedScreenW = 0, cachedScreenH = 0;
+
   router.post('/reconnect', async (req, res) => {
     if (!PHONE_ADDR) return res.status(400).json({ error: 'HUMANAIE_PHONE_IP not set' });
     try {
       execFileSync(adbPath, ['connect', PHONE_ADDR], { timeout: 5000 });
       SERIAL_REF.current = detectSerial();
+      cachedScreenW = 0; cachedScreenH = 0;
       res.json({ ok: true, serial: SERIAL_REF.current });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -328,10 +343,25 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  async function getScreenDims() {
+    if (cachedScreenW && cachedScreenH) return { w: cachedScreenW, h: cachedScreenH };
+    try {
+      const out = (await adbAsync('shell', 'wm size')).toString();
+      // Output looks like "Physical size: 1080x2340" or with an "Override size" line.
+      const m = out.match(/(?:Override|Physical) size:\s*(\d+)x(\d+)/);
+      if (m) {
+        cachedScreenW = parseInt(m[1], 10);
+        cachedScreenH = parseInt(m[2], 10);
+      }
+    } catch {}
+    return { w: cachedScreenW, h: cachedScreenH };
+  }
+
   router.get('/status', async (req, res) => {
     let phone_connected = false;
     let batteryLevel = null;
     let screen_on = false;
+    let screen_w = 0, screen_h = 0;
     let foreground = { package: '', activity: '' };
     try {
       const devOut = (await adbAsync('devices')).toString();
@@ -346,6 +376,8 @@ if (!ADB_AVAILABLE) {
         const p = (await adbAsync('shell', 'dumpsys power | grep mWakefulness')).toString();
         screen_on = parseWakefulness(p);
       } catch {}
+      const dims = await getScreenDims();
+      screen_w = dims.w; screen_h = dims.h;
       foreground = await detectForeground();
     }
     res.json({
@@ -354,6 +386,8 @@ if (!ADB_AVAILABLE) {
       phone_addr: PHONE_ADDR,
       battery: batteryLevel,
       screen_on,
+      screen_w,
+      screen_h,
       package: foreground.package,
       activity: foreground.activity,
     });
