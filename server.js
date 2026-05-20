@@ -272,6 +272,29 @@ function pruneOldSessions() {
       console.log(`[CLEANUP] Deleted old session ${s.id} (freed ${(sSize/1024/1024).toFixed(1)}MB)`);
     }
   } catch (e) { /* ignore */ }
+
+  // Teach-session cleanup: drafts unpromoted after 7 days are deleted.
+  try {
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const entries = fs.readdirSync(SESSIONS_DIR, { withFileTypes: true });
+    const wfList = teach.listWorkflows();
+    for (const ent of entries) {
+      if (!ent.isDirectory() || !ent.name.startsWith('teach-')) continue;
+      const dir = path.join(SESSIONS_DIR, ent.name);
+      const metaPath = path.join(dir, 'meta.json');
+      let m = null;
+      try { m = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch {}
+      const startedAt = (m && m.started_at) || 0;
+      const age = now - startedAt;
+      if (age > SEVEN_DAYS_MS) {
+        const referenced = wfList.some(w => w.source === ent.name);
+        if (!referenced) {
+          try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+        }
+      }
+    }
+  } catch (e) { /* sessions dir may not exist yet */ }
 }
 
 // Dead-time trimming: build ranges of frames worth keeping around real activity.
