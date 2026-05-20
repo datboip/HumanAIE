@@ -1589,7 +1589,7 @@
 
   function renderTabs() {
     // Remove existing tab elements (not the + button, not the pinned phone tab)
-    var existing = $tabbar.querySelectorAll('.tab:not(#phone-tab)');
+    var existing = $tabbar.querySelectorAll('.tab:not(#phone-tab):not(#teach-tab)');
     for (var i = 0; i < existing.length; i++) {
       existing[i].remove();
     }
