@@ -2619,27 +2619,34 @@
     showClickEffect(pos.x - vpRect.left, pos.y - vpRect.top, 'ai');
   }
 
-  // AI swipe trail: green dot at start → dashed line → arrowhead → blue
+  // Swipe trail: green dot at start → dashed line → arrowhead → blue
   // dot at end. SVG overlay self-removes after a few seconds so subsequent
-  // gestures don't pile up. Mirrors the live human-drag overlay but is
-  // transient (humans see their own drag in real time; AI swipes arrive
-  // already-completed, so we need to show the whole gesture at once).
-  function showAiPhoneSwipeTrail(phoneX1, phoneY1, phoneX2, phoneY2) {
+  // gestures don't pile up.
+  //
+  // opts.ghost — true for human swipes (faded, briefer; just enough to
+  //              review the gesture you just did)
+  // opts.updateCursor — false suppresses the moveCursor call (humans
+  //              already have a cursor positioned by the local pointer
+  //              handler; we don't want to flicker it)
+  function showAiPhoneSwipeTrail(phoneX1, phoneY1, phoneX2, phoneY2, opts) {
     if (typeof phoneToScreen !== 'function') return;
+    opts = opts || {};
+    var ghost = !!opts.ghost;
     var a = phoneToScreen(phoneX1, phoneY1);
     var b = phoneToScreen(phoneX2, phoneY2);
     if (!a || !b) return;
-    // moveCursor expects wrapper-relative coords (#ai-cursor is absolute-
-    // positioned inside $viewportWrapper); phoneToScreen returns page
-    // coords. Convert before passing.
     var wRect = $viewportWrapper.getBoundingClientRect();
-    moveCursor(b.x - wRect.left, b.y - wRect.top, 'ai');
+    if (opts.updateCursor !== false) {
+      moveCursor(b.x - wRect.left, b.y - wRect.top, 'ai');
+    }
     // Build SVG overlay scoped to $viewportWrapper for clean layout.
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:11;transition:opacity 0.6s ease';
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:11;transition:opacity 0.6s ease;'
+      + (ghost ? 'opacity:0.55' : 'opacity:1');
     var ax = a.x - wRect.left, ay = a.y - wRect.top;
     var bx = b.x - wRect.left, by = b.y - wRect.top;
     var SVG = 'http://www.w3.org/2000/svg';
+    var baseOpacity = ghost ? '0.55' : '0.9';
     // Dashed line
     var line = document.createElementNS(SVG, 'line');
     line.setAttribute('x1', ax); line.setAttribute('y1', ay);
@@ -2647,7 +2654,7 @@
     line.setAttribute('stroke', '#3ddc84');
     line.setAttribute('stroke-width', '2');
     line.setAttribute('stroke-dasharray', '5,3');
-    line.setAttribute('opacity', '0.85');
+    line.setAttribute('opacity', baseOpacity);
     svg.appendChild(line);
     // Arrowhead at end
     var angle = Math.atan2(by - ay, bx - ax);
@@ -2661,30 +2668,55 @@
     arrow.setAttribute('stroke', '#33aaff');
     arrow.setAttribute('stroke-width', '2');
     arrow.setAttribute('fill', 'none');
-    arrow.setAttribute('opacity', '0.9');
+    arrow.setAttribute('opacity', baseOpacity);
     svg.appendChild(arrow);
-    // Start dot (green)
+    // Start dot (green) + coord label so the human can see exactly where
+    // the gesture began on the phone screen.
     var startDot = document.createElementNS(SVG, 'circle');
     startDot.setAttribute('cx', ax); startDot.setAttribute('cy', ay);
     startDot.setAttribute('r', '6');
     startDot.setAttribute('fill', '#3ddc84');
     startDot.setAttribute('stroke', '#fff');
     startDot.setAttribute('stroke-width', '1.5');
-    startDot.setAttribute('opacity', '0.9');
+    startDot.setAttribute('opacity', baseOpacity);
     svg.appendChild(startDot);
-    // End dot (blue)
+    // End dot (blue) + coord label for "where it landed".
     var endDot = document.createElementNS(SVG, 'circle');
     endDot.setAttribute('cx', bx); endDot.setAttribute('cy', by);
     endDot.setAttribute('r', '6');
     endDot.setAttribute('fill', '#33aaff');
     endDot.setAttribute('stroke', '#fff');
     endDot.setAttribute('stroke-width', '1.5');
-    endDot.setAttribute('opacity', '0.95');
+    endDot.setAttribute('opacity', baseOpacity);
     svg.appendChild(endDot);
+    // Text labels: place to the side of each dot so they don't obscure
+    // the dot itself. textContent only (no innerHTML) — coords are
+    // server-controlled but treat as user data for consistency.
+    function addLabel(x, y, txt, color) {
+      var t = document.createElementNS(SVG, 'text');
+      t.setAttribute('x', x);
+      t.setAttribute('y', y);
+      t.setAttribute('fill', color);
+      t.setAttribute('stroke', '#000');
+      t.setAttribute('stroke-width', '0.5');
+      t.setAttribute('paint-order', 'stroke');
+      t.setAttribute('font-size', '11');
+      t.setAttribute('font-family', 'Courier New, monospace');
+      t.setAttribute('font-weight', 'bold');
+      t.setAttribute('opacity', baseOpacity);
+      t.textContent = txt;
+      svg.appendChild(t);
+    }
+    addLabel(ax + 10, ay - 6, '(' + phoneX1 + ',' + phoneY1 + ')', '#3ddc84');
+    addLabel(bx + 10, by - 6, '(' + phoneX2 + ',' + phoneY2 + ')', '#33aaff');
     $viewportWrapper.appendChild(svg);
-    // Fade after 2s, remove after 2.6s (covers the 0.6s opacity transition).
-    setTimeout(function() { svg.style.opacity = '0'; }, 2000);
-    setTimeout(function() { try { svg.remove(); } catch (e) {} }, 2700);
+    // Ghost mode fades faster (the human just made this gesture; they
+    // don't need it lingering). AI trails persist long enough to track
+    // by eye and verify the dispatch.
+    var fadeDelay = ghost ? 1200 : 2000;
+    var removeDelay = ghost ? 1800 : 2700;
+    setTimeout(function() { svg.style.opacity = '0'; }, fadeDelay);
+    setTimeout(function() { try { svg.remove(); } catch (e) {} }, removeDelay);
   }
 
   // ---- SSE event stream for AI actions ----
@@ -2698,14 +2730,21 @@
         if ((data.type === 'Click' || data.type === 'Hover') && data.source === 'agent' && typeof data.clickX === 'number') {
           showAiClickAt(data.clickX, data.clickY);
         }
-        // HANDROID-mode AI tap (phone-pixel coords) — single green dot
+        // HANDROID-mode AI tap → single green dot. Skip for human-source
+        // taps — the local pointer handler already painted the red dot.
         if (data.type === 'AndroidTap' && data.source === 'agent-phone' && typeof data.phoneX === 'number') {
           showAiPhoneClickAt(data.phoneX, data.phoneY);
         }
-        // HANDROID-mode AI swipe — full trail (green start → arrow → blue end)
-        if (data.type === 'AndroidSwipe' && data.source === 'agent-phone'
+        // HANDROID-mode swipe → trail (green start → arrow + coord → blue end).
+        // For human swipes: 'ghost' mode (faded, briefer) so you can review
+        //   what you just did without it lingering. No cursor update.
+        // For AI swipes: full trail + cursor moves to end.
+        if (data.type === 'AndroidSwipe'
             && typeof data.phoneX1 === 'number' && typeof data.phoneX2 === 'number') {
-          showAiPhoneSwipeTrail(data.phoneX1, data.phoneY1, data.phoneX2, data.phoneY2);
+          showAiPhoneSwipeTrail(data.phoneX1, data.phoneY1, data.phoneX2, data.phoneY2, {
+            ghost: data.source === 'human',
+            updateCursor: data.source === 'agent-phone',
+          });
         }
       } catch(err) {}
     };
