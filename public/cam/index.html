@@ -3246,6 +3246,10 @@
       // Phone card: live status + favorited quick-launches
       loadSplashPhoneCard();
     }
+    // Memoize last rendered values so re-polls don't thrash the DOM.
+    // Without this the splash visibly flickers every 5s — the launches grid
+    // was being innerHTML='d to empty before each fetch resolved.
+    var splashCardCache = { connected: null, opacity: null, appsJSON: null, status: null, info: null };
     function loadSplashPhoneCard() {
       var stateEl   = document.getElementById('splash-phone-state');
       var infoEl    = document.getElementById('splash-phone-info');
@@ -3257,36 +3261,61 @@
       fetch('/android/status').then(function(r) { return r.json(); }).then(function(s) {
         var connected = s && s.adb_available && s.phone_connected;
         var dim = connected ? '1' : '0.45';
-        if (cardEl) cardEl.style.opacity = dim;
+        // Only mutate DOM when values actually change — keeps the splash from
+        // visibly redrawing every poll cycle.
+        if (cardEl && splashCardCache.opacity !== dim) {
+          cardEl.style.opacity = dim;
+          splashCardCache.opacity = dim;
+        }
+        var statusText, statusColor, infoText;
         if (!s || !s.adb_available) {
-          stateEl.textContent = 'no ADB'; stateEl.style.color = '#888';
-          infoEl.textContent = 'ADB not configured on the server.';
+          statusText = 'no ADB';      statusColor = '#888';
+          infoText = 'ADB not configured on the server.';
         } else if (!s.phone_connected) {
-          stateEl.textContent = 'disconnected'; stateEl.style.color = '#d80000';
-          infoEl.textContent = 'No phone connected.';
+          statusText = 'disconnected'; statusColor = '#d80000';
+          infoText = 'No phone connected.';
         } else {
-          stateEl.textContent = (s.screen_on ? 'awake' : 'asleep') + ' · connected';
-          stateEl.style.color = s.screen_on ? '#3ddc84' : '#cccc55';
+          statusText  = (s.screen_on ? 'awake' : 'asleep') + ' · connected';
+          statusColor = s.screen_on ? '#3ddc84' : '#cccc55';
           var lines = [];
           if (s.screen_w && s.screen_h) lines.push(s.screen_w + ' × ' + s.screen_h);
           if (s.battery != null)        lines.push('battery ' + s.battery + '%');
           if (s.package)                lines.push('fg: ' + s.package);
-          infoEl.textContent = lines.join(' · ') || '—';
+          infoText = lines.join(' · ') || '—';
+        }
+        if (splashCardCache.status !== statusText + '|' + statusColor) {
+          stateEl.textContent  = statusText;
+          stateEl.style.color  = statusColor;
+          splashCardCache.status = statusText + '|' + statusColor;
+        }
+        if (splashCardCache.info !== infoText) {
+          infoEl.textContent = infoText;
+          splashCardCache.info = infoText;
         }
         if (openBtn) openBtn.disabled = !connected;
 
-        // Quick-launch grid from favorited apps. Click → switch to HANDROID + launch.
-        launchEl.innerHTML = '';
-        if (!connected) return;
+        // Quick-launch grid: only rebuild if the favorites list itself changed.
+        // Drop everything when disconnected; otherwise diff against last render.
+        if (!connected) {
+          if (splashCardCache.appsJSON !== '[]') {
+            launchEl.innerHTML = '';
+            splashCardCache.appsJSON = '[]';
+          }
+          return;
+        }
         fetch('/android/apps').then(function(r) { return r.json(); }).then(function(apps) {
-          (apps || []).slice(0, 6).forEach(function(a) {
+          var subset = (apps || []).slice(0, 6);
+          var newJSON = JSON.stringify(subset);
+          if (newJSON === splashCardCache.appsJSON) return;  // no change → skip rebuild
+          splashCardCache.appsJSON = newJSON;
+          launchEl.innerHTML = '';
+          subset.forEach(function(a) {
             var btn = document.createElement('button');
             btn.className = 'nav-btn';
             btn.style.cssText = 'height:26px;font-size:10px;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
             btn.textContent = a.name;
             btn.title = a.pkg;
             btn.onclick = function() {
-              // Switch to HANDROID and launch the picked app.
               if (typeof switchToAndroidMode === 'function') switchToAndroidMode();
               fetch('/android/launch', {
                 method: 'POST',
@@ -3298,8 +3327,14 @@
           });
         }).catch(function() {});
       }).catch(function() {
-        stateEl.textContent = 'error'; stateEl.style.color = '#888';
-        infoEl.textContent = '/android/status request failed.';
+        if (splashCardCache.status !== 'error|#888') {
+          stateEl.textContent = 'error'; stateEl.style.color = '#888';
+          splashCardCache.status = 'error|#888';
+        }
+        if (splashCardCache.info !== '/android/status request failed.') {
+          infoEl.textContent = '/android/status request failed.';
+          splashCardCache.info = '/android/status request failed.';
+        }
       });
     }
     window.openHandroidFromSplash = function() {
