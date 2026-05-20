@@ -292,12 +292,21 @@ function promoteSessionToWorkflow(sessionId, { name }) {
 const express = require('express');
 const router = express.Router();
 
+function isSafeId(id) {
+  // Reject anything that could escape the session/workflow root via path
+  // traversal — slashes, backslashes, '..', leading dots. Real IDs are
+  // 'teach-<digits>' or 'wf-<digits>' (set server-side); this regex covers
+  // both plus tolerates future ID shapes that stay alphanumeric+dash+underscore.
+  return typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id);
+}
+
 router.get('/teach/sessions', (req, res) => {
   if (!teachRoot) return res.json([]);
   res.json(listSessions(teachRoot));
 });
 
 router.get('/teach/sessions/:id', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   if (!teachRoot) return res.status(404).json({ error: 'teach not configured' });
   const s = readSession(teachRoot, req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
@@ -305,6 +314,7 @@ router.get('/teach/sessions/:id', (req, res) => {
 });
 
 router.get('/teach/sessions/:id/:file', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   if (!teachRoot) return res.status(404).end();
   if (!/^step-\d{4}\.jpg$/.test(req.params.file)) return res.status(400).end();
   const p = path.join(teachRoot, req.params.id, req.params.file);
@@ -326,6 +336,7 @@ router.post('/teach/cancel', (req, res) => {
 });
 
 router.delete('/teach/sessions/:id', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   if (!teachRoot) return res.status(404).end();
   const dir = sessionDir(teachRoot, req.params.id);
   try { fs.rmSync(dir, { recursive: true, force: true }); res.json({ ok: true }); }
@@ -333,6 +344,7 @@ router.delete('/teach/sessions/:id', (req, res) => {
 });
 
 router.post('/teach/sessions/:id/promote', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   const name = req.body && req.body.name;
   if (!name) return res.status(400).json({ error: 'name required' });
   try {
@@ -346,12 +358,14 @@ router.get('/workflows', (req, res) => {
 });
 
 router.get('/workflows/:id', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   const wf = readWorkflow(req.params.id);
   if (!wf) return res.status(404).json({ error: 'not found' });
   res.json(wf);
 });
 
 router.get('/workflows/:id/:file', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   const wf = readWorkflow(req.params.id);
   if (!wf) return res.status(404).end();
   if (!/^step-\d{4}\.jpg$/.test(req.params.file)) return res.status(400).end();
@@ -362,6 +376,7 @@ router.get('/workflows/:id/:file', (req, res) => {
 });
 
 router.patch('/workflows/:id', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   const wf = readWorkflow(req.params.id);
   if (!wf) return res.status(404).json({ error: 'not found' });
   if (req.body.name) wf.name = String(req.body.name).slice(0, 80);
@@ -374,11 +389,13 @@ router.patch('/workflows/:id', (req, res) => {
 });
 
 router.delete('/workflows/:id', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   if (deleteWorkflow(req.params.id)) res.json({ ok: true });
   else res.status(404).json({ error: 'not found' });
 });
 
 router.patch('/teach/sessions/:id/steps', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
   if (!teachRoot) return res.status(404).json({ error: 'teach not configured' });
   if (!Array.isArray(req.body && req.body.steps)) return res.status(400).json({ error: 'steps[] required' });
   const dir = sessionDir(teachRoot, req.params.id);

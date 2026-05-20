@@ -238,6 +238,37 @@ test('GET /workflows returns an array', async (t) => {
   assert.ok(Array.isArray(body));
 });
 
+test('teach routes reject malformed session IDs (path traversal)', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13340', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // URL-encoded slash in id should be rejected with 400
+  for (const evil of ['..%2Fetc', 'foo%2Fbar', 'has%20spaces']) {
+    const res = await fetch('http://127.0.0.1:13340/teach/sessions/' + evil);
+    assert.strictEqual(res.status, 400, 'evil id "' + evil + '" should 400');
+  }
+  // Plain '..' is normalised away by Express before routing (becomes /teach/)
+  // so the response is 404 — but it never reaches path.join, which is fine.
+  const dotdot = await fetch('http://127.0.0.1:13340/teach/sessions/..');
+  assert.ok(dotdot.status === 404, 'plain .. should not reach handler');
+});
+
 test('PATCH /teach/sessions/:id/steps round-trip', async (t) => {
   const { spawn } = require('node:child_process');
   const path = require('node:path');
