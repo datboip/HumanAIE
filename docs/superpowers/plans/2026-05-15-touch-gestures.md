@@ -896,6 +896,80 @@ git commit -m "fix: stale hardcoded v1.0.x version labels in markup now match pa
 
 ---
 
+## Task 8.5: Grid overlay on viewport (added 2026-05-15 per user request)
+
+**Files:**
+- Modify: `public/cam/index.html` — add a toggle button to the action bar, add a `#viewport-grid` div inside `#viewport-wrapper`, add corresponding CSS and one-line JS toggle.
+
+**Scope:** A visual grid laid over the viewport, toggleable on/off via a button in the action bar. Helps verify tap precision and pick coordinates by eye. Lines only in v1 — coordinate labels deferred to teaching-mode P0.
+
+- [ ] **Step 1: Add the CSS**
+
+Find the existing `#viewport-wrapper` styles in `<style>`. Add the following rules near them:
+
+```css
+  /* Optional coordinate grid laid over the viewport. Toggled by .shown.
+     pointer-events:none so clicks/drags pass through to the viewport. */
+  #viewport-grid {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+    display: none;
+    background-image:
+      linear-gradient(to right, rgba(0, 255, 100, 0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 255, 100, 0.18) 1px, transparent 1px);
+    background-size: 10% 10%;
+  }
+  #viewport-grid.shown { display: block; }
+```
+
+- [ ] **Step 2: Add the DOM element**
+
+Find `<div id="viewport-wrapper">`. Inside it, after the existing `#android-splash` and `#phone-sleep-banner` elements, add:
+
+```html
+        <div id="viewport-grid"></div>
+```
+
+- [ ] **Step 3: Add the toggle button to the action bar**
+
+Find the action-bar row containing `🖱 Click` / `✋ Drag` / `👆 Point` buttons (around line 891). Add a new toggle button immediately after the `👆 Point` button:
+
+```html
+    <button class="nav-btn" id="mode-grid" onclick="toggleGrid(event)" title="Toggle coordinate grid" style="min-width:50px;height:28px;font-size:11px;padding:0 8px">▦ Grid</button>
+```
+
+- [ ] **Step 4: Add the toggle JS**
+
+In a JS section near the existing mode-handling functions (search for `function setMode(`), add:
+
+```javascript
+  window.toggleGrid = function(event) {
+    var grid = document.getElementById('viewport-grid');
+    var btn = document.getElementById('mode-grid');
+    if (!grid) return;
+    var on = grid.classList.toggle('shown');
+    if (btn) btn.classList.toggle('active-mode', on);
+    if (event && event.preventDefault) event.preventDefault();
+  };
+```
+
+- [ ] **Step 5: Verify**
+
+Reload `http://localhost:3333/cam/`. Click `▦ Grid` — gridlines should appear over the viewport in both browser and HANDROID modes. Click again — gridlines disappear. Verify clicks/drags still work on the viewport while the grid is shown (the `pointer-events: none` rule should let them pass through).
+
+If chrome-devtools-mcp is unavailable, use plain `curl http://localhost:3333/cam/ | grep -c viewport-grid` to confirm the DOM element is in the served HTML — should return at least 2 (the CSS rule + the DOM element).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add public/cam/index.html
+git commit -m "feat: toggleable coordinate grid overlay on viewport for precise tap targeting"
+```
+
+---
+
 ## Task 9: End-to-end manual verification on the real phone (`.90`)
 
 **Files:** None. This task is a user-driven checklist. The implementation is done at the end of Task 8; this task confirms it works against actual hardware.
