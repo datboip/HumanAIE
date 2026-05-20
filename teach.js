@@ -294,6 +294,20 @@ function promoteSessionToWorkflow(sessionId, { name }) {
   return wf;
 }
 
+// ── Intent matching (P3 /flows) ─────────────────────────────────────────────
+// Scores how well a workflow matches a free-text intent query. Pure function;
+// no I/O. See spec 2026-05-20 § matchIntent for threshold rationale.
+function matchIntent(workflow, queryIntent) {
+  if (!queryIntent) return 0.5;
+  const text = ((workflow && workflow.name || '') + ' ' + (workflow && workflow.intent || '')).toLowerCase();
+  const q = String(queryIntent).toLowerCase();
+  if (text && text.includes(q)) return 0.9;
+  const tokens = q.split(/\W+/).filter(t => t.length >= 3);
+  if (tokens.length === 0) return 0.4;
+  const hits = tokens.filter(t => text.includes(t)).length;
+  return hits / tokens.length;
+}
+
 // ── HTTP router ─────────────────────────────────────────────────────────────
 const express = require('express');
 const router = express.Router();
@@ -421,4 +435,5 @@ module.exports = {
   router,
   slugify, workflowDir, workflowPathById, writeWorkflowJson,
   promoteSessionToWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
+  matchIntent,
 };

@@ -269,6 +269,48 @@ test('teach routes reject malformed session IDs (path traversal)', async (t) => 
   assert.ok(dotdot.status === 404, 'plain .. should not reach handler');
 });
 
+test('matchIntent returns 0.5 when no intent provided (package-only)', () => {
+  const wf = { name: 'Post a photo', intent: '' };
+  assert.strictEqual(teach.matchIntent(wf, ''), 0.5);
+  assert.strictEqual(teach.matchIntent(wf, null), 0.5);
+});
+
+test('matchIntent returns 0.9 on substring match against name', () => {
+  const wf = { name: 'Post a photo', intent: '' };
+  assert.strictEqual(teach.matchIntent(wf, 'post a photo'), 0.9);
+});
+
+test('matchIntent returns 0.9 on substring match against intent field', () => {
+  const wf = { name: 'Misc', intent: 'open the camera and snap' };
+  assert.strictEqual(teach.matchIntent(wf, 'open the camera'), 0.9);
+});
+
+test('matchIntent is case-insensitive', () => {
+  const wf = { name: 'Post a Photo', intent: '' };
+  assert.strictEqual(teach.matchIntent(wf, 'POST A PHOTO'), 0.9);
+});
+
+test('matchIntent returns hits/totalTokens on partial token overlap', () => {
+  const wf = { name: 'Send a DM', intent: '' };
+  // "send instagram" → tokens ≥3 chars: ["send","instagram"]; "send" hits, "instagram" misses → 1/2 = 0.5
+  assert.strictEqual(teach.matchIntent(wf, 'send instagram'), 0.5);
+});
+
+test('matchIntent returns 0 when no tokens overlap', () => {
+  const wf = { name: 'Send a DM', intent: '' };
+  assert.strictEqual(teach.matchIntent(wf, 'open settings'), 0);
+});
+
+test('matchIntent returns 0.4 floor when intent has no tokens >=3 chars', () => {
+  const wf = { name: 'Send a DM', intent: '' };
+  assert.strictEqual(teach.matchIntent(wf, 'a b c'), 0.4);
+});
+
+test('matchIntent handles missing workflow fields gracefully', () => {
+  const wf = {};
+  assert.strictEqual(teach.matchIntent(wf, 'anything'), 0);
+});
+
 test('PATCH /teach/sessions/:id/steps round-trip', async (t) => {
   const { spawn } = require('node:child_process');
   const path = require('node:path');
