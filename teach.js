@@ -146,7 +146,13 @@ function clearIdleTimer() { if (idleTimer) { clearTimeout(idleTimer); idleTimer 
 function armIdleTimer() {
   clearIdleTimer();
   idleTimer = setTimeout(() => {
-    if (activeSession && activeSession.ended_at === null) endActive('idle');
+    if (!activeSession || activeSession.ended_at !== null) return;
+    // If the AI explicitly paused to wait for human help (markStuck fired
+    // but resolveStuck hasn't yet), the session is intentionally idle —
+    // don't auto-close. The waitfor-resolve handler will close it as
+    // 'stuck' once the human responds, or POST /teach/cancel can discard.
+    if (activeSession.stuck_at !== null && activeSession.help_resolved === null) return;
+    endActive('idle');
   }, IDLE_MS);
 }
 
