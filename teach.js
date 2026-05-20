@@ -58,4 +58,84 @@ function finalizeSession(session, { end_reason, now = Date.now() }) {
   session.end_reason = end_reason || 'unknown';
 }
 
-module.exports = { makeSession, appendStep, markStuck, resolveStuck, finalizeSession };
+const fs = require('node:fs');
+const path = require('node:path');
+
+function sessionDir(rootDir, sessionId) {
+  return path.join(rootDir, sessionId);
+}
+
+function writeSessionMeta(rootDir, session) {
+  const dir = sessionDir(rootDir, session.id);
+  fs.mkdirSync(dir, { recursive: true });
+  const meta = {
+    id: session.id,
+    package: session.package,
+    activity: session.activity,
+    device: session.device,
+    screen_w: session.screen_w,
+    screen_h: session.screen_h,
+    started_at: session.started_at,
+    ended_at: session.ended_at,
+    end_reason: session.end_reason,
+    stuck_at: session.stuck_at,
+    help_question: session.help_question,
+    help_resolved: session.help_resolved,
+    step_count: session.steps.length,
+  };
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+}
+
+function appendStepJsonl(rootDir, session, step) {
+  const dir = sessionDir(rootDir, session.id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(path.join(dir, 'steps.jsonl'), JSON.stringify(step) + '\n');
+}
+
+function saveStepScreenshot(rootDir, session, step, buffer) {
+  if (!buffer || buffer.length < 100) return null;
+  const dir = sessionDir(rootDir, session.id);
+  fs.mkdirSync(dir, { recursive: true });
+  const name = 'step-' + String(step.index + 1).padStart(4, '0') + '.jpg';
+  fs.writeFileSync(path.join(dir, name), buffer);
+  step.screenshot = name;
+  return name;
+}
+
+function readSession(rootDir, sessionId) {
+  const dir = sessionDir(rootDir, sessionId);
+  if (!fs.existsSync(dir)) return null;
+  const metaPath = path.join(dir, 'meta.json');
+  if (!fs.existsSync(metaPath)) return null;
+  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+  const steps = [];
+  const stepsPath = path.join(dir, 'steps.jsonl');
+  if (fs.existsSync(stepsPath)) {
+    const lines = fs.readFileSync(stepsPath, 'utf-8').split('\n').filter(Boolean);
+    for (const line of lines) {
+      try { steps.push(JSON.parse(line)); } catch {}
+    }
+  }
+  return { ...meta, steps };
+}
+
+function listSessions(rootDir) {
+  if (!fs.existsSync(rootDir)) return [];
+  const out = [];
+  for (const name of fs.readdirSync(rootDir)) {
+    if (!name.startsWith('teach-')) continue;
+    const metaPath = path.join(rootDir, name, 'meta.json');
+    if (!fs.existsSync(metaPath)) continue;
+    try {
+      out.push(JSON.parse(fs.readFileSync(metaPath, 'utf-8')));
+    } catch {}
+  }
+  out.sort((a, b) => (b.started_at || 0) - (a.started_at || 0));
+  return out;
+}
+
+module.exports = {
+  makeSession, appendStep, markStuck, resolveStuck, finalizeSession,
+  writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
+  sessionDir,
+};

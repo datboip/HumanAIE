@@ -55,3 +55,55 @@ test('finalizeSession is idempotent', () => {
   assert.strictEqual(s.ended_at, 200);
   assert.strictEqual(s.end_reason, 'done');
 });
+
+const fs = require('node:fs');
+const path = require('node:path');
+const os  = require('node:os');
+const {
+  writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
+} = require('../teach');
+
+function tmpDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'teach-test-'));
+}
+
+test('writeSessionMeta + appendStepJsonl + readSession round-trip', () => {
+  const root = tmpDir();
+  const s = makeSession({ package: 'com.foo', activity: '.A', now: 5000 });
+  appendStep(s, { action: 'tap', args: { x: 1, y: 2 }, now: 5001 });
+  appendStep(s, { action: 'tap', args: { x: 3, y: 4 }, now: 5002 });
+  writeSessionMeta(root, s);
+  appendStepJsonl(root, s, s.steps[0]);
+  appendStepJsonl(root, s, s.steps[1]);
+  const round = readSession(root, s.id);
+  assert.strictEqual(round.id, s.id);
+  assert.strictEqual(round.steps.length, 2);
+  assert.deepStrictEqual(round.steps[1].args, { x: 3, y: 4 });
+});
+
+test('saveStepScreenshot writes a step-NNNN.jpg and updates step.screenshot', () => {
+  const root = tmpDir();
+  const s = makeSession({ now: 6000 });
+  const step = appendStep(s, { action: 'tap', args: { x: 1, y: 2 } });
+  const buf = Buffer.from(new Array(500).fill(0xFF));
+  saveStepScreenshot(root, s, step, buf);
+  assert.strictEqual(step.screenshot, 'step-0001.jpg');
+  const onDisk = fs.readFileSync(path.join(root, s.id, 'step-0001.jpg'));
+  assert.strictEqual(onDisk.length, buf.length);
+});
+
+test('listSessions returns most-recent-first', () => {
+  const root = tmpDir();
+  const a = makeSession({ now: 1000 });
+  const b = makeSession({ now: 2000 });
+  writeSessionMeta(root, a);
+  writeSessionMeta(root, b);
+  const list = listSessions(root);
+  assert.strictEqual(list.length, 2);
+  assert.strictEqual(list[0].id, b.id);
+});
+
+test('readSession returns null for non-existent id', () => {
+  const root = tmpDir();
+  assert.strictEqual(readSession(root, 'teach-does-not-exist'), null);
+});
