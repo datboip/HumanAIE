@@ -1237,15 +1237,19 @@
     <div class="popup-anchor">
       <button class="nav-btn" id="record-btn" onclick="togglePopup('record-popup', event)" style="width:80px;height:28px;font-size:11px;padding:0 8px;text-align:center">⚫ Record</button>
       <div id="record-popup" class="popup-panel" style="right:0;left:auto;width:220px">
-        <div class="popup-title" id="record-popup-title">Record what?</div>
-        <div class="popup-row">
+        <div class="popup-title" id="record-popup-title">Record video</div>
+        <!-- Workflow recording deferred to Teaching Mode. Kept hidden so the
+             saved-workflows infrastructure isn't dangling in the UI without
+             a way to view or replay them. Will return as a real feature
+             once the workflow consumption API lands. -->
+        <div class="popup-row" style="display:none">
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
-            <input type="checkbox" id="record-workflow" checked style="cursor:pointer"> Workflow (action steps)
+            <input type="checkbox" id="record-workflow" style="cursor:pointer"> Workflow (action steps)
           </label>
         </div>
         <div class="popup-row">
           <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer">
-            <input type="checkbox" id="record-video" style="cursor:pointer"> Video (MP4 replay)
+            <input type="checkbox" id="record-video" checked style="cursor:pointer"> Video (MP4 replay)
           </label>
         </div>
         <div class="popup-hint" id="record-popup-status" style="display:none">Recording in progress...</div>
