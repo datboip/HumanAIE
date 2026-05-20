@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, execFile, spawn } = require('node:child_process');
 const express = require('express');
+const teach = require('./teach');
 
 function parseWakefulness(dumpsysOutput) {
   if (typeof dumpsysOutput !== 'string' || dumpsysOutput.length === 0) return false;
@@ -94,6 +95,12 @@ if (!ADB_AVAILABLE) {
 
   // ── Frame cache — background screencap loop, shared by /screenshot and /stream ─
   let frameCache = null;
+  function captureSessionFrame() {
+    // Reuse the most-recent broadcast frame (JPEG when h264 alive, PNG when
+    // on screencap fallback). Avoids a separate ADB call per dispatch —
+    // tap latency unchanged.
+    return frameCache;
+  }
   const MJPEG_CLIENTS = new Set();
   const BOUNDARY = 'frame';
 
@@ -272,8 +279,14 @@ if (!ADB_AVAILABLE) {
   router.post('/tap', async (req, res) => {
     const { x, y } = req.body || {};
     if (x == null || y == null) return res.status(400).json({ error: 'x,y required' });
+    const xi = Math.round(x), yi = Math.round(y);
     try {
-      await adbAsync('shell', `input tap ${Math.round(x)} ${Math.round(y)}`);
+      await adbAsync('shell', `input tap ${xi} ${yi}`);
+      teach.captureStep({
+        action: 'tap', args: { x: xi, y: yi },
+        screenshotBuffer: captureSessionFrame(),
+        metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
+      });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -287,6 +300,12 @@ if (!ADB_AVAILABLE) {
     try {
       await adbAsync('shell',
         `input swipe ${Math.round(x1)} ${Math.round(y1)} ${Math.round(x2)} ${Math.round(y2)} ${safeDur}`);
+      teach.captureStep({
+        action: 'swipe',
+        args: { x1: Math.round(x1), y1: Math.round(y1), x2: Math.round(x2), y2: Math.round(y2), dur: safeDur },
+        screenshotBuffer: captureSessionFrame(),
+        metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
+      });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -297,6 +316,11 @@ if (!ADB_AVAILABLE) {
     const safe = String(text).replace(/([^a-zA-Z0-9@.,!?\-])/g, '\\$1');
     try {
       await adbAsync('shell', `input text ${safe}`);
+      teach.captureStep({
+        action: 'type', args: { text: String(text) },
+        screenshotBuffer: captureSessionFrame(),
+        metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
+      });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -320,10 +344,15 @@ if (!ADB_AVAILABLE) {
     const { keycode } = req.body || {};
     if (!keycode) return res.status(400).json({ error: 'keycode required' });
     if (!/^[A-Z0-9_]+$/.test(String(keycode))) {
-      return res.status(400).json({ error: 'keycode must be alphanumeric uppercase + underscores (e.g., KEYCODE_HOME)' });
+      return res.status(400).json({ error: 'keycode must be alphanumeric uppercase + underscores' });
     }
     try {
       await adbAsync('shell', `input keyevent ${keycode}`);
+      teach.captureStep({
+        action: 'key', args: { keycode: String(keycode) },
+        screenshotBuffer: captureSessionFrame(),
+        metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
+      });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
