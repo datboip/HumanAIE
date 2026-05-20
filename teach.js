@@ -11,11 +11,11 @@
 function makeSession({ package: pkg, activity, device, screen_w, screen_h, now = Date.now() } = {}) {
   return {
     id: 'teach-' + now,
-    package: pkg || '',
-    activity: activity || '',
-    device: device || '',
-    screen_w: screen_w || 0,
-    screen_h: screen_h || 0,
+    package: pkg ?? '',
+    activity: activity ?? '',
+    device: device ?? '',
+    screen_w: screen_w ?? 0,
+    screen_h: screen_h ?? 0,
     started_at: now,
     ended_at: null,
     end_reason: null,
@@ -48,8 +48,8 @@ function markStuck(session, { help_question, step_index = null }) {
 }
 
 function resolveStuck(session, { x, y, label }) {
-  if (!session) return;
-  session.help_resolved = { x: x | 0, y: y | 0, label: label || '' };
+  if (!session || session.ended_at !== null) return;
+  session.help_resolved = { x: x | 0, y: y | 0, label: label ?? '' };
 }
 
 function finalizeSession(session, { end_reason, now = Date.now() }) {
