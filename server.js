@@ -787,6 +787,15 @@ app.post('/waitfor-highlight', (req, res) => {
   const { message } = req.body;
   waitforHighlight = { message: message || 'Please highlight what I should click', since: new Date().toISOString() };
   highlights = []; // clear old highlights
+  const active = teach.getActive();
+  if (active) {
+    teach.markStuck(active, { help_question: message || '' });
+    teach.captureStep({
+      action: 'waitfor-asked',
+      args: { question: message || '' },
+      screenshotBuffer: null,
+    });
+  }
   res.json({ success: true, waiting: true, message: waitforHighlight.message });
 });
 
@@ -817,6 +826,12 @@ app.post('/waitfor-highlight/done', (req, res) => {
     };
     fs.appendFileSync(logPath, JSON.stringify(logEntry) + '\n');
   } catch(e) {}
+  const active = teach.getActive();
+  if (active) {
+    const resolution = highlights.find(h => !h.label || !h.label.startsWith('CORRECTION:')) || highlights[0] || {};
+    teach.resolveStuck(active, { x: resolution.x || 0, y: resolution.y || 0, label: resolution.label || '' });
+    teach.endActive('stuck');
+  }
   waitforHighlight = null;
   highlights = [];
   res.json({ success: true, ...result });
