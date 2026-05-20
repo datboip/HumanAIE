@@ -981,7 +981,7 @@
     <div id="splash">
       <h1>HumanAIE</h1>
       <div class="tagline">Human AI Eyes</div>
-      <div class="version ver-tag">v1.2.0</div>
+      <div class="version ver-tag">v1.3.0</div>
 
       <div class="splash-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px;width:100%;max-width:640px">
         <!-- Status panel -->
@@ -1261,7 +1261,7 @@
   <!-- Status bar -->
   <div id="statusbar">
     <div class="sb-left" style="display:flex;align-items:center;gap:6px">
-      <span style="font-weight:bold;font-size:11px">HumanAIE <span class="ver-tag" style="font-weight:normal;opacity:0.7">v1.2.0</span></span>
+      <span style="font-weight:bold;font-size:11px">HumanAIE <span class="ver-tag" style="font-weight:normal;opacity:0.7">v1.3.0</span></span>
       <div id="status-dot" style="width:8px;height:8px;border-radius:50%;background:#c00;flex-shrink:0"></div>
       <span id="status-text" style="font-size:11px;flex:1">Loading...</span>
     </div>
@@ -1556,6 +1556,14 @@
     var existing = $tabbar.querySelectorAll('.tab:not(#phone-tab)');
     for (var i = 0; i < existing.length; i++) {
       existing[i].remove();
+    }
+
+    // If we only have the placeholder about:blank tab the server created at
+    // startup, don't render it — the user hasn't navigated anywhere yet so
+    // there's nothing meaningful to label. UI shows just the + and 📱 tab.
+    if (state.tabs.length === 1) {
+      var lone = state.tabs[0];
+      if (!lone.url || lone.url === 'about:blank') return;
     }
 
     for (var j = 0; j < state.tabs.length; j++) {

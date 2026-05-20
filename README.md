@@ -3,7 +3,7 @@
 **Human AI Eyes** (pronounced "Human Eye") — a shared browser for human-AI collaboration.
 
 <!-- badges -->
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 
@@ -114,8 +114,17 @@ AI Agent <--> REST API <--> HumanAIE Server <--> Headless Browser
 - Screenshot PNG (`/screenshot`)
 - SSE event stream (`/events`)
 
-**Android Device**
-- Drive a paired Android phone via the PHONE tab on the Cam UI (requires `adb` + WiFi pairing)
+**Android Device (HANDROID)**
+- Drive a paired Android phone via the 📱 HANDROID tab (requires `adb` + USB or WiFi pairing)
+- Live phone screen streamed via h264 (when supported) with screencap fallback
+- Viewport tap = phone tap; drag = swipe; hold-then-drag = drag-and-hold (rearrange icons)
+- Visual drag overlay shows start point + direction + gesture type (green=swipe / orange=drag-hold)
+- Sleep banner: tap to wake AND dismiss keyguard in one action
+- App launcher with favorites stored server-side (apps.json) — pick from phone's installed apps
+- Splash screen surfaces live phone status (resolution, battery, foreground app) + quick-launch grid
+- Calibration mode: fires 9 known-coord taps with labeled visual markers to verify coord pipeline
+- Coordinate grid overlay for precise tap targeting
+- Real phone screen dims pulled from `wm size` so taps/swipes map correctly when stream is downscaled
 
 ---
 
@@ -224,20 +233,26 @@ Android endpoints are mounted when ADB is available on the server. Set `HUMANAIE
 | Method | Endpoint | Body | Description |
 |--------|----------|------|-------------|
 | GET | `/android/screenshot` | -- | Current phone screen as PNG/JPEG |
-| GET | `/android/stream` | -- | MJPEG stream |
-| GET | `/android/status` | -- | `{adb_available, phone_connected, package, activity, battery}` |
+| GET | `/android/stream` | -- | MJPEG stream (h264 piped through ffmpeg when available, screencap fallback) |
+| GET | `/android/status` | -- | `{adb_available, phone_connected, package, activity, battery, screen_on, screen_w, screen_h}` |
 | GET | `/android/info` | -- | Device model, Android version, serial |
 | GET | `/android/ui-dump` | -- | `uiautomator` XML dump |
 | POST | `/android/tap` | `{x, y}` | Tap at coordinates |
-| POST | `/android/swipe` | `{x1, y1, x2, y2, dur}` | Swipe gesture |
+| POST | `/android/swipe` | `{x1, y1, x2, y2, dur}` | Swipe gesture (dur ≤ 300ms = fling; ≥ 1000ms = drag-and-hold) |
 | POST | `/android/type` | `{text}` | Type text |
 | POST | `/android/key` | `{keycode}` | Key event (KEYCODE_HOME, KEYCODE_BACK, etc.) |
+| POST | `/android/wake` | -- | Wake phone + dismiss keyguard in one call (preferred over KEYCODE_WAKEUP) |
 | POST | `/android/shell` | `{cmd}` | Arbitrary `adb shell` command |
 | POST | `/android/launch` | `{pkg}` | Launch app by package name |
+| GET | `/android/apps` | -- | List of favorited apps (read from server-side apps.json) |
+| POST | `/android/apps` | `{pkg, name}` | Add an app to favorites |
+| DELETE | `/android/apps/:pkg` | -- | Remove app from favorites |
+| GET | `/android/apps/installed` | -- | All user-installed packages from `pm list packages -3` |
 | POST | `/android/install` | `{apkPath}` | Install APK from local path |
 | POST | `/android/push` | `{local, remote}` | Push file to device |
 | POST | `/android/pull` | `{remote, local}` | Pull file from device |
 | POST | `/android/record` | `{seconds}` | Record screen, returns MP4 path |
+| POST | `/android/config` | `{captureIntervalMs}` | Tune screencap fallback cadence (16-2000ms) |
 
 ---
 
