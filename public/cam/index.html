@@ -2607,6 +2607,20 @@
     showClickEffect(pos.x - dx, pos.y - dy, 'ai');
   }
 
+  // Map a phone-pixel coord to screen-relative position on the viewport
+  // and trigger the AI-style green dot + ripple. phoneToScreen accounts for
+  // letterboxing (object-fit: contain) and uses real phone dims from
+  // androidStatus.screen_w/h when in HANDROID mode.
+  function showAiPhoneClickAt(phoneX, phoneY) {
+    if (typeof phoneToScreen !== 'function') return;
+    var pos = phoneToScreen(phoneX, phoneY);
+    if (!pos) return;
+    var vpRect = $viewport.getBoundingClientRect();
+    var wRect = $viewportWrapper.getBoundingClientRect();
+    // showClickEffect expects coords relative to the viewport element
+    showClickEffect(pos.x - vpRect.left, pos.y - vpRect.top, 'ai');
+  }
+
   // ---- SSE event stream for AI actions ----
   function connectSSE() {
     if (state.sseConnected) return;
@@ -2614,9 +2628,13 @@
     es.onmessage = function(e) {
       try {
         var data = JSON.parse(e.data);
-        // AI click or hover — show cursor + ripple
+        // Browser-mode AI click/hover (virtual coords)
         if ((data.type === 'Click' || data.type === 'Hover') && data.source === 'agent' && typeof data.clickX === 'number') {
           showAiClickAt(data.clickX, data.clickY);
+        }
+        // HANDROID-mode AI tap/swipe (phone-pixel coords)
+        if ((data.type === 'AndroidTap' || data.type === 'AndroidSwipe') && data.source === 'agent-phone' && typeof data.phoneX === 'number') {
+          showAiPhoneClickAt(data.phoneX, data.phoneY);
         }
       } catch(err) {}
     };

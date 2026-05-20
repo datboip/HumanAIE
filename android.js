@@ -6,6 +6,12 @@ const { execFileSync, execFile, spawn } = require('node:child_process');
 const express = require('express');
 const teach = require('./teach');
 
+// Optional broadcaster — server.js wires this up at startup so dispatch
+// handlers can push SSE events for AI-driven phone actions. Until set,
+// the broadcaster is a no-op so android.js stays standalone-loadable.
+let broadcaster = function() {};
+function setBroadcaster(fn) { if (typeof fn === 'function') broadcaster = fn; }
+
 function parseWakefulness(dumpsysOutput) {
   if (typeof dumpsysOutput !== 'string' || dumpsysOutput.length === 0) return false;
   const match = dumpsysOutput.match(/mWakefulness=(\w+)/);
@@ -287,6 +293,7 @@ if (!ADB_AVAILABLE) {
         screenshotBuffer: captureSessionFrame(),
         metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
       });
+      broadcaster('AndroidTap', `(${xi}, ${yi})`, 'ok', { phoneX: xi, phoneY: yi, source: 'agent-phone' });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -306,6 +313,10 @@ if (!ADB_AVAILABLE) {
         screenshotBuffer: captureSessionFrame(),
         metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
       });
+      // Broadcast the END point as the "where the AI landed" — that's the
+      // user-visible result of the swipe.
+      broadcaster('AndroidSwipe', `(${Math.round(x1)},${Math.round(y1)})→(${Math.round(x2)},${Math.round(y2)})`, 'ok',
+        { phoneX: Math.round(x2), phoneY: Math.round(y2), source: 'agent-phone' });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -605,5 +616,6 @@ module.exports.PHONE_IP = PHONE_IP;
 module.exports.PHONE_PORT = PHONE_PORT;
 module.exports.PHONE_ADDR = PHONE_ADDR;
 module.exports.SERIAL = () => SERIAL_REF.current;
+module.exports.setBroadcaster = setBroadcaster;
 module.exports.getForeground = () => getForeground;
 module.exports.parseWakefulness = parseWakefulness;

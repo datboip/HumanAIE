@@ -75,6 +75,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const android = require('./android');
 app.use('/android', android.router);
+// Wire pushAction (hoisted function declaration below) so android.js can
+// broadcast tap/swipe events over the existing /events SSE pipeline.
+android.setBroadcaster(pushAction);
 const teach = require('./teach');
 teach.configure({ rootDir: `${DATA_DIR}/humanaie-sessions` });
 const WORKFLOWS_DIR = `${DATA_DIR}/workflows`;
