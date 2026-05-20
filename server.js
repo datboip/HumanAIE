@@ -77,6 +77,8 @@ const android = require('./android');
 app.use('/android', android.router);
 const teach = require('./teach');
 teach.configure({ rootDir: `${DATA_DIR}/humanaie-sessions` });
+const WORKFLOWS_DIR = `${DATA_DIR}/workflows`;
+teach.configureWorkflows({ rootDir: WORKFLOWS_DIR });
 app.use('/', teach.router);
 console.log(android.ADB_AVAILABLE
   ? `[android] ADB found at ${android.adbPath}, phone target: ${android.PHONE_ADDR || '(not configured — set HUMANAIE_PHONE_IP)'}`

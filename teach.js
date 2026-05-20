@@ -193,6 +193,101 @@ function cancelActive() {
   return cancelled;
 }
 
+// ── Workflow promotion ──────────────────────────────────────────────────────
+let workflowsRoot = null;
+function configureWorkflows({ rootDir }) { workflowsRoot = rootDir; }
+
+function slugify(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'workflow';
+}
+
+function workflowDir(pkg, activity, slug) {
+  return path.join(workflowsRoot, slugify(pkg || 'unknown'), slugify(activity || 'unknown'), slug);
+}
+
+function listWorkflows({ package: pkgFilter, activity: actFilter } = {}) {
+  if (!workflowsRoot || !fs.existsSync(workflowsRoot)) return [];
+  const out = [];
+  for (const pkgDir of fs.readdirSync(workflowsRoot)) {
+    const pkgPath = path.join(workflowsRoot, pkgDir);
+    if (!fs.statSync(pkgPath).isDirectory()) continue;
+    for (const actDir of fs.readdirSync(pkgPath)) {
+      const actPath = path.join(pkgPath, actDir);
+      if (!fs.statSync(actPath).isDirectory()) continue;
+      for (const slug of fs.readdirSync(actPath)) {
+        const wfPath = path.join(actPath, slug, 'workflow.json');
+        if (!fs.existsSync(wfPath)) continue;
+        try {
+          const wf = JSON.parse(fs.readFileSync(wfPath, 'utf-8'));
+          if (pkgFilter && wf.package !== pkgFilter) continue;
+          if (actFilter && wf.activity !== actFilter) continue;
+          out.push(wf);
+        } catch {}
+      }
+    }
+  }
+  out.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+  return out;
+}
+
+function readWorkflow(id) {
+  for (const wf of listWorkflows()) if (wf.id === id) return wf;
+  return null;
+}
+
+function workflowPathById(id) {
+  for (const wf of listWorkflows()) {
+    if (wf.id === id) return path.join(workflowDir(wf.package, wf.activity, slugify(wf.name)), 'workflow.json');
+  }
+  return null;
+}
+
+function writeWorkflowJson(wfPath, wf) {
+  fs.mkdirSync(path.dirname(wfPath), { recursive: true });
+  fs.writeFileSync(wfPath, JSON.stringify(wf, null, 2));
+}
+
+function deleteWorkflow(id) {
+  const wf = readWorkflow(id);
+  if (!wf) return false;
+  const dir = workflowDir(wf.package, wf.activity, slugify(wf.name));
+  try { fs.rmSync(dir, { recursive: true, force: true }); return true; } catch { return false; }
+}
+
+function promoteSessionToWorkflow(sessionId, { name }) {
+  if (!teachRoot || !workflowsRoot) throw new Error('teach/workflows not configured');
+  const session = readSession(teachRoot, sessionId);
+  if (!session) throw new Error('session not found');
+  const slug = slugify(name);
+  let finalSlug = slug, n = 2;
+  while (fs.existsSync(workflowDir(session.package, session.activity, finalSlug))) {
+    finalSlug = slug + '-' + n++;
+  }
+  const dir = workflowDir(session.package, session.activity, finalSlug);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const step of session.steps) {
+    if (!step.screenshot) continue;
+    const src = path.join(teachRoot, sessionId, step.screenshot);
+    const dst = path.join(dir, step.screenshot);
+    try { fs.copyFileSync(src, dst); } catch {}
+  }
+  const wf = {
+    id: 'wf-' + Date.now(),
+    name: String(name || 'Untitled'),
+    package: session.package,
+    activity: session.activity,
+    screen_w: session.screen_w,
+    screen_h: session.screen_h,
+    steps: session.steps,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    source: sessionId,
+    use_count: 0,
+  };
+  writeWorkflowJson(path.join(dir, 'workflow.json'), wf);
+  return wf;
+}
+
 // ── HTTP router ─────────────────────────────────────────────────────────────
 const express = require('express');
 const router = express.Router();
@@ -237,11 +332,22 @@ router.delete('/teach/sessions/:id', (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/teach/sessions/:id/promote', (req, res) => {
+  const name = req.body && req.body.name;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const wf = promoteSessionToWorkflow(req.params.id, { name });
+    res.json({ ok: true, workflow: wf });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 module.exports = {
   makeSession, appendStep, markStuck, resolveStuck, finalizeSession,
   writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
   sessionDir,
-  configure, getActive, startSession, captureStep, endActive, cancelActive,
+  configure, configureWorkflows, getActive, startSession, captureStep, endActive, cancelActive,
   IDLE_MS,
   router,
+  slugify, workflowDir, workflowPathById, writeWorkflowJson,
+  promoteSessionToWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
 };

@@ -147,6 +147,45 @@ test('cancelActive removes the session directory', () => {
   assert.strictEqual(fs.existsSync(path.join(root, id)), false);
 });
 
+test('promoteSessionToWorkflow copies steps and writes workflow.json', () => {
+  const teachDir = tmpDir();
+  const wfDir = tmpDir();
+  teach.configure({ rootDir: teachDir });
+  teach.configureWorkflows({ rootDir: wfDir });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({ action: 'tap', args: { x: 100, y: 200 },
+    screenshotBuffer: Buffer.alloc(200, 0xff),
+    metaArgs: { package: 'com.test', activity: '.A' } });
+  teach.captureStep({ action: 'tap', args: { x: 300, y: 400 },
+    screenshotBuffer: Buffer.alloc(200, 0xff) });
+  const id = teach.getActive().id;
+  teach.endActive('done');
+
+  const wf = teach.promoteSessionToWorkflow(id, { name: 'Test flow' });
+  assert.strictEqual(wf.name, 'Test flow');
+  assert.strictEqual(wf.steps.length, 2);
+  const wfPath = path.join(wfDir, 'com-test', 'a', 'test-flow', 'step-0001.jpg');
+  assert.ok(fs.existsSync(wfPath));
+});
+
+test('listWorkflows returns the promoted workflow', () => {
+  const teachDir = tmpDir();
+  const wfDir = tmpDir();
+  teach.configure({ rootDir: teachDir });
+  teach.configureWorkflows({ rootDir: wfDir });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 }, metaArgs: { package: 'com.foo', activity: '.X' } });
+  const id = teach.getActive().id;
+  teach.endActive('done');
+  teach.promoteSessionToWorkflow(id, { name: 'Foo' });
+
+  const list = teach.listWorkflows();
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(list[0].name, 'Foo');
+});
+
 test('GET /teach/sessions returns empty list when no sessions exist', async (t) => {
   const { spawn } = require('node:child_process');
   const path = require('node:path');
