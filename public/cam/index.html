@@ -205,6 +205,20 @@
   .phone-tab-indicator[data-state="connected"]    { background: #fff; }
   .phone-tab-indicator[data-state="disconnected"] { background: #d80000; }
   .phone-tab-indicator[data-state="no-adb"]       { background: #444; }
+  .tab.teach-tab {
+    background: #6633cc;
+    color: #fff;
+  }
+  .tab.teach-tab:hover { background: #7744dd; }
+  .tab.teach-tab.active { background: #8855ee; color: #fff; }
+  .teach-tab-indicator {
+    display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%;
+    margin-left: 6px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.4);
+  }
+  .teach-tab-indicator.active { background: #d80000; border-color: rgba(0,0,0,0.5); }
 
   /* ---- Waitfor banner ---- */
   #waitfor-banner {
@@ -966,6 +980,10 @@
       <span class="tab-title">📱 HANDROID</span>
       <span id="phone-tab-indicator" class="phone-tab-indicator" data-state="unknown"></span>
     </div>
+    <div id="teach-tab" class="tab teach-tab" title="Workflow capture + replay (P1)">
+      <span class="tab-title">🎓 Teach</span>
+      <span id="teach-tab-indicator" class="teach-tab-indicator" title="active session"></span>
+    </div>
   </div>
 
   <!-- Waitfor banner -->
@@ -1661,6 +1679,7 @@
   }
 
   function switchToAndroidMode() {
+    if (typeof teachMode !== 'undefined' && teachMode) switchFromTeachMode();
     androidMode = true;
     document.body.classList.add('android-mode');
     document.getElementById('phone-tab').classList.add('active');
@@ -1681,6 +1700,7 @@
   }
 
   function switchToBrowserMode() {
+    if (typeof teachMode !== 'undefined' && teachMode) switchFromTeachMode();
     androidMode = false;
     document.body.classList.remove('android-mode');
     document.getElementById('phone-tab').classList.remove('active');
@@ -1689,6 +1709,45 @@
       var el = document.getElementById(id);
       if (el) el.classList.remove('shown');
     });
+  }
+
+  var teachMode = false;
+  function switchToTeachMode() {
+    teachMode = true;
+    androidMode = false;
+    document.body.classList.add('teach-mode');
+    document.body.classList.remove('android-mode');
+    document.getElementById('teach-tab').classList.add('active');
+    document.getElementById('phone-tab').classList.remove('active');
+    document.querySelectorAll('.tab:not(.teach-tab):not(.phone-tab).active').forEach(function(el) { el.classList.remove('active'); });
+    var browserSplash = document.getElementById('splash');
+    if (browserSplash) browserSplash.style.display = 'none';
+    state.splashVisible = false;
+    if ($viewport) $viewport.classList.remove('visible');
+    showTeachLanding();
+  }
+  function switchFromTeachMode() {
+    teachMode = false;
+    document.body.classList.remove('teach-mode');
+    document.getElementById('teach-tab').classList.remove('active');
+    var root = document.getElementById('teach-root');
+    if (root) root.style.display = 'none';
+  }
+  document.getElementById('teach-tab').addEventListener('click', switchToTeachMode);
+
+  function showTeachLanding() {
+    // Wired in Task 10.
+    var wrap = document.getElementById('viewport-wrapper');
+    if (!wrap) return;
+    var existing = document.getElementById('teach-root');
+    if (!existing) {
+      existing = document.createElement('div');
+      existing.id = 'teach-root';
+      existing.style.cssText = 'position:absolute;inset:0;background:#0a0a0a;color:#bbb;padding:24px;overflow:auto;z-index:6';
+      wrap.appendChild(existing);
+    }
+    existing.style.display = 'block';
+    existing.textContent = 'Teach landing — wired in Task 10';
   }
 
   document.getElementById('phone-tab').addEventListener('click', switchToAndroidMode);
