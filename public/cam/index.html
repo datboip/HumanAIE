@@ -1735,19 +1735,119 @@
   }
   document.getElementById('teach-tab').addEventListener('click', switchToTeachMode);
 
+  var teachRefreshTimer = null;
   function showTeachLanding() {
-    // Wired in Task 10.
     var wrap = document.getElementById('viewport-wrapper');
     if (!wrap) return;
-    var existing = document.getElementById('teach-root');
-    if (!existing) {
-      existing = document.createElement('div');
-      existing.id = 'teach-root';
-      existing.style.cssText = 'position:absolute;inset:0;background:#0a0a0a;color:#bbb;padding:24px;overflow:auto;z-index:6';
-      wrap.appendChild(existing);
+    var root = document.getElementById('teach-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'teach-root';
+      root.style.cssText = 'position:absolute;inset:0;background:#0a0a0a;color:#bbb;padding:16px;overflow:auto;z-index:6';
+      wrap.appendChild(root);
     }
-    existing.style.display = 'block';
-    existing.textContent = 'Teach landing — wired in Task 10';
+    root.style.display = 'block';
+    // Reset DOM
+    while (root.firstChild) root.removeChild(root.firstChild);
+    var landing = document.createElement('div');
+    landing.id = 'teach-landing';
+    root.appendChild(landing);
+    renderTeachLanding();
+    if (teachRefreshTimer) clearInterval(teachRefreshTimer);
+    teachRefreshTimer = setInterval(function() {
+      if (teachMode) renderTeachLanding();
+      else { clearInterval(teachRefreshTimer); teachRefreshTimer = null; }
+    }, 5000);
+  }
+
+  function renderTeachLanding() {
+    var landing = document.getElementById('teach-landing');
+    if (!landing) return;
+    Promise.all([
+      fetch('/teach/sessions').then(function(r) { return r.json(); }).catch(function() { return []; }),
+      fetch('/workflows').then(function(r) { return r.json(); }).catch(function() { return []; }),
+    ]).then(function(results) {
+      var sessions = results[0] || [];
+      var workflows = results[1] || [];
+      // Clear and rebuild via DOM API (no innerHTML — keeps user-controlled
+      // strings safely text-only).
+      while (landing.firstChild) landing.removeChild(landing.firstChild);
+      var grid = document.createElement('div');
+      grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px';
+      grid.appendChild(buildLandingColumn('Recent sessions', sessions, renderSessionRow));
+      grid.appendChild(buildLandingColumn('Saved workflows (consulted by AI in P3)', workflows, renderWorkflowRow));
+      landing.appendChild(grid);
+    });
+  }
+
+  function buildLandingColumn(title, items, rowBuilder) {
+    var col = document.createElement('div');
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid #2a2a2a;padding-bottom:4px';
+    hdr.textContent = title;
+    col.appendChild(hdr);
+    if (items.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:#666;font-size:12px;font-style:italic';
+      empty.textContent = 'nothing here yet';
+      col.appendChild(empty);
+      return col;
+    }
+    items.forEach(function(item) {
+      col.appendChild(rowBuilder(item));
+    });
+    return col;
+  }
+
+  function renderSessionRow(s) {
+    var statusColor = '#cccc55', statusText = '⏱ idle timeout';
+    if (s.end_reason === 'done')  { statusColor = '#3ddc84'; statusText = '✓ succeeded'; }
+    if (s.end_reason === 'stuck') { statusColor = '#d80000'; statusText = '✕ stuck — needs help'; }
+    if (s.ended_at === null)      { statusColor = '#ff66cc'; statusText = '🔴 active'; }
+    var ago = (Date.now() - (s.ended_at || s.started_at)) / 1000;
+    var agoText = ago < 60 ? Math.round(ago) + 's ago' : Math.round(ago/60) + 'm ago';
+    var row = document.createElement('div');
+    row.className = 'teach-session-row';
+    row.style.cssText = 'background:#0a0a0a;border:1px solid #2a2a2a;border-left:3px solid ' + statusColor + ';border-radius:4px;padding:8px;margin-bottom:6px;cursor:pointer';
+    row.addEventListener('click', function() { openTeachEditor(s.id, 'session'); });
+    var top = document.createElement('div');
+    top.style.cssText = 'display:flex;justify-content:space-between;font-size:11px';
+    var lt = document.createElement('span'); lt.style.color = statusColor; lt.textContent = statusText;
+    var rt = document.createElement('span'); rt.style.color = '#666'; rt.textContent = agoText;
+    top.appendChild(lt); top.appendChild(rt); row.appendChild(top);
+    var mid = document.createElement('div');
+    mid.style.cssText = 'font-size:12px;color:#ccc;margin-top:2px';
+    mid.textContent = (s.package || '—') + ' · ' + (s.step_count || 0) + ' actions';
+    row.appendChild(mid);
+    if (s.help_question) {
+      var bot = document.createElement('div');
+      bot.style.cssText = 'font-size:10px;color:#cccc55;margin-top:2px;font-style:italic';
+      bot.textContent = '"' + s.help_question + '"';
+      row.appendChild(bot);
+    }
+    return row;
+  }
+
+  function renderWorkflowRow(w) {
+    var row = document.createElement('div');
+    row.className = 'teach-workflow-row';
+    row.style.cssText = 'background:#0a0a0a;border:1px solid #2a2a2a;border-radius:4px;padding:8px;margin-bottom:6px;cursor:pointer';
+    row.addEventListener('click', function() { openTeachEditor(w.id, 'workflow'); });
+    var name = document.createElement('div');
+    name.style.cssText = 'font-size:12px;color:#3ddc84;font-weight:bold';
+    name.textContent = w.name;
+    row.appendChild(name);
+    var meta = document.createElement('div');
+    meta.style.cssText = 'font-size:10px;color:#666;margin-top:2px';
+    var stepCount = (w.steps && w.steps.length) || 0;
+    meta.textContent = (w.package || '—') + ' · ' + stepCount + ' steps · used ' + (w.use_count || 0) + '×';
+    row.appendChild(meta);
+    return row;
+  }
+
+  // Stubbed for Task 11.
+  function openTeachEditor(id, type) {
+    console.log('openTeachEditor', id, type);
   }
 
   document.getElementById('phone-tab').addEventListener('click', switchToAndroidMode);
@@ -1985,6 +2085,12 @@
         txt.textContent = (androidStatus.package || '?') + ' — battery ' + batt;
       }
     }
+
+    fetch('/teach/sessions').then(function(r) { return r.json(); }).then(function(list) {
+      var active = Array.isArray(list) && list.find && list.find(function(s) { return s.ended_at === null; });
+      var dot = document.getElementById('teach-tab-indicator');
+      if (dot) dot.classList.toggle('active', !!active);
+    }).catch(function() {});
   }
 
   // Bind side-panel button listeners. Guarded so removing any button from the markup
