@@ -784,6 +784,9 @@
     background: #1f1f1f;
     color: #aaa;
   }
+  /* History-visibility toggles: dimmed when off, restored when on. */
+  #android-side-left .ac-toggle-btn { opacity: 0.35; font-size: 14px; }
+  #android-side-left .ac-toggle-btn.active { opacity: 1; }
   #android-side-left .ac-side-btn:active {
     background: #2a2a2a;
     color: #3ddc84;
@@ -1055,6 +1058,14 @@
       <button class="nav-btn ac-side-btn" id="ac-back" title="Back">&#9664;</button>
       <button class="nav-btn ac-side-btn" id="ac-home" title="Home">&#9634;</button>
       <button class="nav-btn ac-side-btn" id="ac-recent" title="Recent apps">&#9776;</button>
+      <!-- Separator before the history-visibility toggles -->
+      <div style="height:6px"></div>
+      <button class="nav-btn ac-side-btn ac-toggle-btn active" id="ac-show-human"
+              title="Show your taps/swipes (red ghost trail)"
+              onclick="toggleHistory('human', event)">🔴</button>
+      <button class="nav-btn ac-side-btn ac-toggle-btn active" id="ac-show-ai"
+              title="Show AI taps/swipes (green ghost trail)"
+              onclick="toggleHistory('ai', event)">🟢</button>
     </div>
     <!-- App launcher — floats at top-right of viewport. Click 🚀 to expand
          the favorites popup, which is server-backed via /android/apps. -->
@@ -1325,6 +1336,9 @@
     interactionMode: 'click',
     waitforNotified: false,
     showCursor: true,
+    // Per-source visualization toggles, controlled by side-panel switches.
+    showHumanHistory: true,
+    showAiHistory: true,
     showRipples: true,
     sseConnected: false
   };
@@ -2568,7 +2582,7 @@
     $aiCursor.style.top  = (screenY - 5) + 'px';
   }
 
-  function showClickEffect(relX, relY, source) {
+  function showClickEffect(relX, relY, source, opts) {
     var vpRect = $viewport.getBoundingClientRect();
     var wRect = $viewportWrapper.getBoundingClientRect();
     var dx = vpRect.left - wRect.left;
@@ -2595,6 +2609,21 @@
     dot.style.top = (sy - 3) + 'px';
     $viewportWrapper.appendChild(dot);
     setTimeout(function() { dot.remove(); }, 1000);
+    // Optional coord label — '(540,1200)' next to the dot, color matches.
+    // Human=red, AI=green (matching the dot's color class).
+    if (opts && opts.label) {
+      var lbl = document.createElement('div');
+      lbl.style.cssText = 'position:absolute;left:' + (sx + 10) + 'px;top:' + (sy - 8) + 'px;'
+        + 'font-family:Courier New,monospace;font-size:11px;font-weight:bold;'
+        + 'color:' + (source === 'ai' ? '#3ddc84' : '#ff6666') + ';'
+        + 'text-shadow:0 0 2px #000,0 0 2px #000,0 0 2px #000;'
+        + 'pointer-events:none;z-index:12;white-space:nowrap;'
+        + 'transition:opacity 0.4s ease';
+      lbl.textContent = opts.label;
+      $viewportWrapper.appendChild(lbl);
+      setTimeout(function() { lbl.style.opacity = '0'; }, 1200);
+      setTimeout(function() { try { lbl.remove(); } catch (e) {} }, 1600);
+    }
   }
 
   function showAiClickAt(vx, vy) {
@@ -2613,10 +2642,12 @@
   // androidStatus.screen_w/h when in HANDROID mode.
   function showAiPhoneClickAt(phoneX, phoneY) {
     if (typeof phoneToScreen !== 'function') return;
+    if (state.showAiHistory === false) return;
     var pos = phoneToScreen(phoneX, phoneY);
     if (!pos) return;
     var vpRect = $viewport.getBoundingClientRect();
-    showClickEffect(pos.x - vpRect.left, pos.y - vpRect.top, 'ai');
+    showClickEffect(pos.x - vpRect.left, pos.y - vpRect.top, 'ai',
+      { label: '(' + phoneX + ',' + phoneY + ')' });
   }
 
   // Swipe trail: green dot at start → dashed line → arrowhead → blue
@@ -2632,6 +2663,10 @@
     if (typeof phoneToScreen !== 'function') return;
     opts = opts || {};
     var ghost = !!opts.ghost;
+    // Respect the per-source visibility toggles: human swipes are ghost
+    // (skip if showHumanHistory off); AI swipes are full (skip if showAiHistory off).
+    if (ghost && state.showHumanHistory === false) return;
+    if (!ghost && state.showAiHistory === false) return;
     var a = phoneToScreen(phoneX1, phoneY1);
     var b = phoneToScreen(phoneX2, phoneY2);
     if (!a || !b) return;
@@ -3228,6 +3263,19 @@
   }
 
   var gridTrackTimer = null;
+  window.toggleHistory = function(which, event) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (which === 'human') {
+      state.showHumanHistory = !state.showHumanHistory;
+      var btn = document.getElementById('ac-show-human');
+      if (btn) btn.classList.toggle('active', state.showHumanHistory);
+    } else if (which === 'ai') {
+      state.showAiHistory = !state.showAiHistory;
+      var btn2 = document.getElementById('ac-show-ai');
+      if (btn2) btn2.classList.toggle('active', state.showAiHistory);
+    }
+  };
+
   window.toggleGrid = function(event) {
     var grid = document.getElementById('viewport-grid');
     var btn = document.getElementById('mode-grid');
@@ -3392,9 +3440,15 @@
         }).catch(function(err) { console.warn('android swipe failed', err); });
       } else {
         var rect = $viewport.getBoundingClientRect();
-        showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human');
         var tapP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
         if (!tapP) return;
+        // showClickEffect with the human-source label so the red dot
+        // gets the same coord annotation as AI taps. Hidden when the
+        // 'show human history' toggle is off.
+        if (state.showHumanHistory !== false) {
+          showClickEffect(ps.startClientX - rect.left, ps.startClientY - rect.top, 'human',
+            { label: '(' + tapP.x + ',' + tapP.y + ')' });
+        }
         recordAction('tap', { x: tapP.x, y: tapP.y });
         fetch('/android/tap', {
           method: 'POST',
