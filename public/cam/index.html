@@ -1911,6 +1911,33 @@
       timeline.appendChild(buildStepCard(step, idx, stuck === idx, type, imgPrefix));
     });
     root.appendChild(timeline);
+
+    // Wire delete + label-edit handlers
+    var deleteBtns = root.querySelectorAll('.teach-step-delete');
+    for (var di = 0; di < deleteBtns.length; di++) {
+      deleteBtns[di].addEventListener('click', function(e) {
+        var idx = parseInt(e.target.getAttribute('data-step-idx'), 10);
+        data.steps.splice(idx, 1);
+        // Re-index remaining steps so their index field matches array position
+        for (var i = 0; i < data.steps.length; i++) data.steps[i].index = i;
+        window.__teachEditorData = data;
+        renderTeachEditor(id, type, data, imgPrefix);
+      });
+    }
+    var labelInputs = root.querySelectorAll('.teach-step-label');
+    for (var li = 0; li < labelInputs.length; li++) {
+      labelInputs[li].addEventListener('blur', function(e) {
+        var idx = parseInt(e.target.getAttribute('data-step-idx'), 10);
+        data.steps[idx].label = e.target.value;
+        window.__teachEditorData = data;
+        if (type === 'workflow') {
+          fetch('/workflows/' + encodeURIComponent(id), {
+            method: 'PATCH', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ steps: data.steps }),
+          }).catch(function(err) { console.warn('patch failed', err); });
+        }
+      });
+    }
   }
 
   function buildStepCard(step, idx, isStuck, type, imgPrefix) {

@@ -378,6 +378,17 @@ router.delete('/workflows/:id', (req, res) => {
   else res.status(404).json({ error: 'not found' });
 });
 
+router.patch('/teach/sessions/:id/steps', (req, res) => {
+  if (!teachRoot) return res.status(404).json({ error: 'teach not configured' });
+  if (!Array.isArray(req.body && req.body.steps)) return res.status(400).json({ error: 'steps[] required' });
+  const dir = sessionDir(teachRoot, req.params.id);
+  if (!fs.existsSync(dir)) return res.status(404).json({ error: 'not found' });
+  const tmp = path.join(dir, 'steps.jsonl.tmp');
+  fs.writeFileSync(tmp, req.body.steps.map(s => JSON.stringify(s)).join('\n') + '\n');
+  fs.renameSync(tmp, path.join(dir, 'steps.jsonl'));
+  res.json({ ok: true });
+});
+
 module.exports = {
   makeSession, appendStep, markStuck, resolveStuck, finalizeSession,
   writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
