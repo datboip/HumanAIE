@@ -1940,6 +1940,30 @@
     }
   }
 
+  window.saveWorkflowFromSession = function(sessionId) {
+    var data = window.__teachEditorData;
+    if (!data) { alert('No session data loaded — try opening the session again.'); return; }
+    var defaultName = (function() {
+      var labels = data.steps.filter(function(s) { return s.label; }).map(function(s) { return s.label; });
+      return labels[0] ? labels.slice(0, 2).join(' → ') : 'untitled-' + sessionId.slice(-6);
+    })();
+    var name = prompt('Name this workflow:', defaultName);
+    if (!name) return;
+    // Persist in-memory edits to disk first, then promote.
+    fetch('/teach/sessions/' + encodeURIComponent(sessionId) + '/steps', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ steps: data.steps }),
+    }).then(function() {
+      return fetch('/teach/sessions/' + encodeURIComponent(sessionId) + '/promote', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: name }),
+      });
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Save failed: ' + d.error); return; }
+      openTeachEditor(d.workflow.id, 'workflow');
+    }).catch(function(err) { alert('Save failed: ' + err.message); });
+  };
+
   function buildStepCard(step, idx, isStuck, type, imgPrefix) {
     var card = document.createElement('div');
     card.className = 'teach-step-card';
