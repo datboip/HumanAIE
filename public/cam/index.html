@@ -983,9 +983,9 @@
       <div class="tagline">Human AI Eyes</div>
       <div class="version ver-tag">v1.2.0</div>
 
-      <div style="display:flex;gap:16px;margin-top:24px;flex-wrap:wrap;justify-content:center;max-width:600px">
+      <div class="splash-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:24px;width:100%;max-width:900px">
         <!-- Status panel -->
-        <div style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:180px;text-align:left">
+        <div class="splash-card" style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;text-align:left;display:flex;flex-direction:column">
           <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px">Status</div>
           <div style="font-size:12px;margin-bottom:4px" id="splash-connection">⚫ Checking...</div>
           <div style="font-size:12px;margin-bottom:4px" id="splash-tabs">Tabs: —</div>
@@ -993,7 +993,7 @@
         </div>
 
         <!-- Quick launch (populated from history + bookmarks) -->
-        <div style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:200px;text-align:left">
+        <div class="splash-card" style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;text-align:left;display:flex;flex-direction:column">
           <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px;display:flex;justify-content:space-between;align-items:center">
             Quick Launch
             <span onclick="clearHistory()" style="font-size:9px;color:#999;cursor:pointer;font-weight:normal" title="Clear history">clear</span>
@@ -1006,7 +1006,7 @@
         </div>
 
         <!-- Recent history -->
-        <div style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:180px;text-align:left">
+        <div class="splash-card" style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;text-align:left;display:flex;flex-direction:column">
           <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px;display:flex;justify-content:space-between;align-items:center">
             Recent
             <span onclick="clearHistory()" style="font-size:9px;color:#999;cursor:pointer;font-weight:normal" title="Clear history">clear</span>
@@ -1015,7 +1015,7 @@
         </div>
 
         <!-- 📱 Phone card — HANDROID status + quick launches from splash. -->
-        <div id="splash-phone-card" style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;min-width:220px;text-align:left">
+        <div id="splash-phone-card" class="splash-card" style="background:rgba(255,255,255,0.05);border:2px outset var(--bg);padding:12px 16px;text-align:left;display:flex;flex-direction:column">
           <div style="font-size:11px;font-weight:bold;margin-bottom:8px;border-bottom:1px solid var(--shadow);padding-bottom:4px;display:flex;justify-content:space-between;align-items:center">
             📱 Phone
             <span id="splash-phone-state" style="font-size:10px;font-weight:normal;color:#d80000">disconnected</span>
