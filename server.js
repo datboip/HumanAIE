@@ -75,6 +75,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const android = require('./android');
 app.use('/android', android.router);
+const teach = require('./teach');
+teach.configure({ rootDir: `${DATA_DIR}/humanaie-sessions` });
+app.use('/', teach.router);
 console.log(android.ADB_AVAILABLE
   ? `[android] ADB found at ${android.adbPath}, phone target: ${android.PHONE_ADDR || '(not configured — set HUMANAIE_PHONE_IP)'}`
   : `[android] ADB not found — /android/* will return 503`);

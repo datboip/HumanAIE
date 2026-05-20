@@ -12,7 +12,10 @@ history.json
 highlight-history.jsonl
 humanaie-interactions.jsonl
 apps.json
+workflows/
 
 # Recordings
 recordings/
 screenshots/
+
+.superpowers/

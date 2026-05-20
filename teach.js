@@ -193,10 +193,55 @@ function cancelActive() {
   return cancelled;
 }
 
+// ── HTTP router ─────────────────────────────────────────────────────────────
+const express = require('express');
+const router = express.Router();
+
+router.get('/teach/sessions', (req, res) => {
+  if (!teachRoot) return res.json([]);
+  res.json(listSessions(teachRoot));
+});
+
+router.get('/teach/sessions/:id', (req, res) => {
+  if (!teachRoot) return res.status(404).json({ error: 'teach not configured' });
+  const s = readSession(teachRoot, req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  res.json(s);
+});
+
+router.get('/teach/sessions/:id/:file', (req, res) => {
+  if (!teachRoot) return res.status(404).end();
+  if (!/^step-\d{4}\.jpg$/.test(req.params.file)) return res.status(400).end();
+  const p = path.join(teachRoot, req.params.id, req.params.file);
+  if (!fs.existsSync(p)) return res.status(404).end();
+  res.set('Content-Type', 'image/jpeg');
+  res.sendFile(p);
+});
+
+router.post('/teach/done', (req, res) => {
+  const f = endActive('done');
+  if (!f) return res.status(400).json({ error: 'no active session' });
+  res.json({ ok: true, id: f.id });
+});
+
+router.post('/teach/cancel', (req, res) => {
+  const c = cancelActive();
+  if (!c) return res.status(400).json({ error: 'no active session' });
+  res.json({ ok: true, id: c.id });
+});
+
+router.delete('/teach/sessions/:id', (req, res) => {
+  if (!teachRoot) return res.status(404).end();
+  const dir = sessionDir(teachRoot, req.params.id);
+  try { fs.rmSync(dir, { recursive: true, force: true }); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = {
   makeSession, appendStep, markStuck, resolveStuck, finalizeSession,
   writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
   sessionDir,
   configure, getActive, startSession, captureStep, endActive, cancelActive,
   IDLE_MS,
+  router,
 };
