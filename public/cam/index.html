@@ -2616,9 +2616,74 @@
     var pos = phoneToScreen(phoneX, phoneY);
     if (!pos) return;
     var vpRect = $viewport.getBoundingClientRect();
-    var wRect = $viewportWrapper.getBoundingClientRect();
-    // showClickEffect expects coords relative to the viewport element
     showClickEffect(pos.x - vpRect.left, pos.y - vpRect.top, 'ai');
+  }
+
+  // AI swipe trail: green dot at start → dashed line → arrowhead → blue
+  // dot at end. SVG overlay self-removes after a few seconds so subsequent
+  // gestures don't pile up. Mirrors the live human-drag overlay but is
+  // transient (humans see their own drag in real time; AI swipes arrive
+  // already-completed, so we need to show the whole gesture at once).
+  function showAiPhoneSwipeTrail(phoneX1, phoneY1, phoneX2, phoneY2) {
+    if (typeof phoneToScreen !== 'function') return;
+    var a = phoneToScreen(phoneX1, phoneY1);
+    var b = phoneToScreen(phoneX2, phoneY2);
+    if (!a || !b) return;
+    // Light up the AI cursor dot at the END (matches the tap behavior —
+    // "where the AI ended up" is the single canonical cursor position).
+    var wRect = $viewportWrapper.getBoundingClientRect();
+    moveCursor(b.x, b.y, 'ai');
+    // Build SVG overlay scoped to $viewportWrapper for clean layout.
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:11;transition:opacity 0.6s ease';
+    var ax = a.x - wRect.left, ay = a.y - wRect.top;
+    var bx = b.x - wRect.left, by = b.y - wRect.top;
+    var SVG = 'http://www.w3.org/2000/svg';
+    // Dashed line
+    var line = document.createElementNS(SVG, 'line');
+    line.setAttribute('x1', ax); line.setAttribute('y1', ay);
+    line.setAttribute('x2', bx); line.setAttribute('y2', by);
+    line.setAttribute('stroke', '#3ddc84');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('stroke-dasharray', '5,3');
+    line.setAttribute('opacity', '0.85');
+    svg.appendChild(line);
+    // Arrowhead at end
+    var angle = Math.atan2(by - ay, bx - ax);
+    var al = 10;
+    var a1x = bx - al * Math.cos(angle - 0.4);
+    var a1y = by - al * Math.sin(angle - 0.4);
+    var a2x = bx - al * Math.cos(angle + 0.4);
+    var a2y = by - al * Math.sin(angle + 0.4);
+    var arrow = document.createElementNS(SVG, 'polyline');
+    arrow.setAttribute('points', a1x + ',' + a1y + ' ' + bx + ',' + by + ' ' + a2x + ',' + a2y);
+    arrow.setAttribute('stroke', '#33aaff');
+    arrow.setAttribute('stroke-width', '2');
+    arrow.setAttribute('fill', 'none');
+    arrow.setAttribute('opacity', '0.9');
+    svg.appendChild(arrow);
+    // Start dot (green)
+    var startDot = document.createElementNS(SVG, 'circle');
+    startDot.setAttribute('cx', ax); startDot.setAttribute('cy', ay);
+    startDot.setAttribute('r', '6');
+    startDot.setAttribute('fill', '#3ddc84');
+    startDot.setAttribute('stroke', '#fff');
+    startDot.setAttribute('stroke-width', '1.5');
+    startDot.setAttribute('opacity', '0.9');
+    svg.appendChild(startDot);
+    // End dot (blue)
+    var endDot = document.createElementNS(SVG, 'circle');
+    endDot.setAttribute('cx', bx); endDot.setAttribute('cy', by);
+    endDot.setAttribute('r', '6');
+    endDot.setAttribute('fill', '#33aaff');
+    endDot.setAttribute('stroke', '#fff');
+    endDot.setAttribute('stroke-width', '1.5');
+    endDot.setAttribute('opacity', '0.95');
+    svg.appendChild(endDot);
+    $viewportWrapper.appendChild(svg);
+    // Fade after 2s, remove after 2.6s (covers the 0.6s opacity transition).
+    setTimeout(function() { svg.style.opacity = '0'; }, 2000);
+    setTimeout(function() { try { svg.remove(); } catch (e) {} }, 2700);
   }
 
   // ---- SSE event stream for AI actions ----
@@ -2632,9 +2697,14 @@
         if ((data.type === 'Click' || data.type === 'Hover') && data.source === 'agent' && typeof data.clickX === 'number') {
           showAiClickAt(data.clickX, data.clickY);
         }
-        // HANDROID-mode AI tap/swipe (phone-pixel coords)
-        if ((data.type === 'AndroidTap' || data.type === 'AndroidSwipe') && data.source === 'agent-phone' && typeof data.phoneX === 'number') {
+        // HANDROID-mode AI tap (phone-pixel coords) — single green dot
+        if (data.type === 'AndroidTap' && data.source === 'agent-phone' && typeof data.phoneX === 'number') {
           showAiPhoneClickAt(data.phoneX, data.phoneY);
+        }
+        // HANDROID-mode AI swipe — full trail (green start → arrow → blue end)
+        if (data.type === 'AndroidSwipe' && data.source === 'agent-phone'
+            && typeof data.phoneX1 === 'number' && typeof data.phoneX2 === 'number') {
+          showAiPhoneSwipeTrail(data.phoneX1, data.phoneY1, data.phoneX2, data.phoneY2);
         }
       } catch(err) {}
     };
