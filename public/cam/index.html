@@ -2083,7 +2083,7 @@
     fetch('/android/swipe', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(coords),
+      body: JSON.stringify(Object.assign({}, coords, { source: 'human' })),
     }).catch(function(e) { console.warn('phoneSwipe failed', e); });
   };
 
@@ -2157,7 +2157,7 @@
         fetch('/android/tap', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ x: p.px, y: p.py }),
+          body: JSON.stringify({ x: p.px, y: p.py, source: 'human' }),
         }).catch(function(e) { console.warn('calibration tap failed', e); });
       }, idx * 600);
     });
@@ -2629,10 +2629,11 @@
     var a = phoneToScreen(phoneX1, phoneY1);
     var b = phoneToScreen(phoneX2, phoneY2);
     if (!a || !b) return;
-    // Light up the AI cursor dot at the END (matches the tap behavior —
-    // "where the AI ended up" is the single canonical cursor position).
+    // moveCursor expects wrapper-relative coords (#ai-cursor is absolute-
+    // positioned inside $viewportWrapper); phoneToScreen returns page
+    // coords. Convert before passing.
     var wRect = $viewportWrapper.getBoundingClientRect();
-    moveCursor(b.x, b.y, 'ai');
+    moveCursor(b.x - wRect.left, b.y - wRect.top, 'ai');
     // Build SVG overlay scoped to $viewportWrapper for clean layout.
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:11;transition:opacity 0.6s ease';
@@ -3327,22 +3328,28 @@
         var startP = screenToPhone({ clientX: ps.startClientX, clientY: ps.startClientY });
         var endP   = screenToPhone(e);
         if (!startP || !endP) return;
+        var gestureMs = Math.max(1, e.timeStamp - ps.startTime);
+        var phoneDistPx = Math.hypot(endP.x - startP.x, endP.y - startP.y);
+        var velocity = phoneDistPx / gestureMs;  // phone-px per ms
         var dur;
         if (ps.isDragHold) {
-          // Long-press preceded the move → drag-and-hold (rearrange icon,
-          // drag widget). Android needs a sustained press of ~1s+ to
-          // register as drag-and-drop instead of a swipe.
+          // Long-press preceded the move → drag-and-hold (rearrange icon).
           dur = DRAG_HOLD_DUR_MS;
+        } else if (velocity >= 2) {
+          // Fast flick — force compact duration so Android sees it as a
+          // fling (carousel snap, back-gesture, recents).
+          dur = 200;
         } else {
-          // Quick swipe → compact dur range so Android sees it as a fling.
-          dur = e.timeStamp - ps.startTime;
-          if (dur < 100) dur = 100; else if (dur > 300) dur = 300;
+          // Slow/medium drag — preserve the user's actual gesture time so
+          // the phone tracks the finger. Lets lists/feeds scroll smoothly
+          // at the speed the human is dragging instead of always flinging.
+          dur = Math.max(100, Math.min(2000, gestureMs));
         }
         recordAction('swipe', { x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur });
         fetch('/android/swipe', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur }),
+          body: JSON.stringify({ x1: startP.x, y1: startP.y, x2: endP.x, y2: endP.y, dur: dur, source: 'human' }),
         }).catch(function(err) { console.warn('android swipe failed', err); });
       } else {
         var rect = $viewport.getBoundingClientRect();
@@ -3353,7 +3360,7 @@
         fetch('/android/tap', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ x: tapP.x, y: tapP.y }),
+          body: JSON.stringify({ x: tapP.x, y: tapP.y, source: 'human' }),
         }).catch(function(err) { console.warn('android tap failed', err); });
       }
       return;

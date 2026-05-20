@@ -293,7 +293,12 @@ if (!ADB_AVAILABLE) {
         screenshotBuffer: captureSessionFrame(),
         metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
       });
-      broadcaster('AndroidTap', `(${xi}, ${yi})`, 'ok', { phoneX: xi, phoneY: yi, source: 'agent-phone' });
+      // Skip the AI-dot broadcast when the cam UI itself triggered this
+      // (the local pointer handler already rendered the human red dot —
+      // a second SSE-driven green dot would visually clash).
+      if (req.body && req.body.source !== 'human') {
+        broadcaster('AndroidTap', `(${xi}, ${yi})`, 'ok', { phoneX: xi, phoneY: yi, source: 'agent-phone' });
+      }
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -313,19 +318,20 @@ if (!ADB_AVAILABLE) {
         screenshotBuffer: captureSessionFrame(),
         metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
       });
-      // Broadcast BOTH endpoints so the cam UI can render the swipe as a
-      // full trail (green start → arrow → blue end), not just a single dot.
-      // phoneX/phoneY kept for backward-compat consumers.
-      broadcaster('AndroidSwipe',
-        `(${Math.round(x1)},${Math.round(y1)})→(${Math.round(x2)},${Math.round(y2)})`,
-        'ok',
-        {
-          phoneX1: Math.round(x1), phoneY1: Math.round(y1),
-          phoneX2: Math.round(x2), phoneY2: Math.round(y2),
-          phoneX:  Math.round(x2), phoneY:  Math.round(y2),
-          dur: safeDur,
-          source: 'agent-phone',
-        });
+      // Skip the AI-trail broadcast when the cam UI itself triggered this
+      // (the local pointer handler already showed the live drag overlay).
+      if (req.body && req.body.source !== 'human') {
+        broadcaster('AndroidSwipe',
+          `(${Math.round(x1)},${Math.round(y1)})→(${Math.round(x2)},${Math.round(y2)})`,
+          'ok',
+          {
+            phoneX1: Math.round(x1), phoneY1: Math.round(y1),
+            phoneX2: Math.round(x2), phoneY2: Math.round(y2),
+            phoneX:  Math.round(x2), phoneY:  Math.round(y2),
+            dur: safeDur,
+            source: 'agent-phone',
+          });
+      }
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
