@@ -1916,7 +1916,7 @@
     var deleteBtns = root.querySelectorAll('.teach-step-delete');
     for (var di = 0; di < deleteBtns.length; di++) {
       deleteBtns[di].addEventListener('click', function(e) {
-        var idx = parseInt(e.target.getAttribute('data-step-idx'), 10);
+        var idx = parseInt(e.currentTarget.getAttribute('data-step-idx'), 10);
         data.steps.splice(idx, 1);
         // Re-index remaining steps so their index field matches array position
         for (var i = 0; i < data.steps.length; i++) data.steps[i].index = i;
