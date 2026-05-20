@@ -341,6 +341,43 @@ router.post('/teach/sessions/:id/promote', (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+router.get('/workflows', (req, res) => {
+  res.json(listWorkflows({ package: req.query.package, activity: req.query.activity }));
+});
+
+router.get('/workflows/:id', (req, res) => {
+  const wf = readWorkflow(req.params.id);
+  if (!wf) return res.status(404).json({ error: 'not found' });
+  res.json(wf);
+});
+
+router.get('/workflows/:id/:file', (req, res) => {
+  const wf = readWorkflow(req.params.id);
+  if (!wf) return res.status(404).end();
+  if (!/^step-\d{4}\.jpg$/.test(req.params.file)) return res.status(400).end();
+  const p = path.join(workflowDir(wf.package, wf.activity, slugify(wf.name)), req.params.file);
+  if (!fs.existsSync(p)) return res.status(404).end();
+  res.set('Content-Type', 'image/jpeg');
+  res.sendFile(p);
+});
+
+router.patch('/workflows/:id', (req, res) => {
+  const wf = readWorkflow(req.params.id);
+  if (!wf) return res.status(404).json({ error: 'not found' });
+  if (req.body.name) wf.name = String(req.body.name).slice(0, 80);
+  if (Array.isArray(req.body.steps)) wf.steps = req.body.steps;
+  wf.updated_at = Date.now();
+  const wfPath = workflowPathById(req.params.id);
+  if (!wfPath) return res.status(500).json({ error: 'cannot resolve workflow path' });
+  writeWorkflowJson(wfPath, wf);
+  res.json({ ok: true, workflow: wf });
+});
+
+router.delete('/workflows/:id', (req, res) => {
+  if (deleteWorkflow(req.params.id)) res.json({ ok: true });
+  else res.status(404).json({ error: 'not found' });
+});
+
 module.exports = {
   makeSession, appendStep, markStuck, resolveStuck, finalizeSession,
   writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
