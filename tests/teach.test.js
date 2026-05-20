@@ -107,3 +107,42 @@ test('readSession returns null for non-existent id', () => {
   const root = tmpDir();
   assert.strictEqual(readSession(root, 'teach-does-not-exist'), null);
 });
+
+const teach = require('../teach');
+
+test('captureStep starts a session lazily on first call', () => {
+  const root = tmpDir();
+  teach.configure({ rootDir: root });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 }, metaArgs: { package: 'com.foo' } });
+  const active = teach.getActive();
+  assert.ok(active);
+  assert.strictEqual(active.package, 'com.foo');
+  assert.strictEqual(active.steps.length, 1);
+  teach.endActive('test-cleanup');
+});
+
+test('endActive finalizes and clears activeSession', () => {
+  const root = tmpDir();
+  teach.configure({ rootDir: root });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 } });
+  const finished = teach.endActive('done');
+  assert.strictEqual(finished.end_reason, 'done');
+  assert.ok(finished.ended_at);
+  assert.strictEqual(teach.getActive(), null);
+});
+
+test('cancelActive removes the session directory', () => {
+  const root = tmpDir();
+  teach.configure({ rootDir: root });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 } });
+  const id = teach.getActive().id;
+  assert.ok(fs.existsSync(path.join(root, id)));
+  teach.cancelActive();
+  assert.strictEqual(fs.existsSync(path.join(root, id)), false);
+});

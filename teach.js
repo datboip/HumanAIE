@@ -134,8 +134,69 @@ function listSessions(rootDir) {
   return out;
 }
 
+// ── Active session manager (singleton) ─────────────────────────────────────
+const IDLE_MS = 30 * 1000;
+let activeSession = null;
+let idleTimer = null;
+let teachRoot = null;          // set by configure() before any capture happens
+
+function configure({ rootDir }) { teachRoot = rootDir; }
+function getActive() { return activeSession; }
+function clearIdleTimer() { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } }
+function armIdleTimer() {
+  clearIdleTimer();
+  idleTimer = setTimeout(() => {
+    if (activeSession && activeSession.ended_at === null) endActive('idle');
+  }, IDLE_MS);
+}
+
+function startSession(metaArgs) {
+  if (activeSession && activeSession.ended_at === null) return activeSession;
+  activeSession = makeSession(metaArgs || {});
+  if (teachRoot) writeSessionMeta(teachRoot, activeSession);
+  armIdleTimer();
+  return activeSession;
+}
+
+function captureStep({ action, args, screenshotBuffer = null, metaArgs = null }) {
+  if (!activeSession || activeSession.ended_at !== null) startSession(metaArgs || {});
+  const step = appendStep(activeSession, { action, args });
+  if (!step) return null;
+  if (screenshotBuffer && teachRoot) saveStepScreenshot(teachRoot, activeSession, step, screenshotBuffer);
+  if (teachRoot) {
+    appendStepJsonl(teachRoot, activeSession, step);
+    writeSessionMeta(teachRoot, activeSession);
+  }
+  armIdleTimer();
+  return step;
+}
+
+function endActive(reason) {
+  if (!activeSession || activeSession.ended_at !== null) return null;
+  finalizeSession(activeSession, { end_reason: reason });
+  if (teachRoot) writeSessionMeta(teachRoot, activeSession);
+  clearIdleTimer();
+  const finished = activeSession;
+  activeSession = null;
+  return finished;
+}
+
+function cancelActive() {
+  if (!activeSession) return null;
+  if (teachRoot) {
+    const dir = sessionDir(teachRoot, activeSession.id);
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+  clearIdleTimer();
+  const cancelled = activeSession;
+  activeSession = null;
+  return cancelled;
+}
+
 module.exports = {
   makeSession, appendStep, markStuck, resolveStuck, finalizeSession,
   writeSessionMeta, appendStepJsonl, saveStepScreenshot, readSession, listSessions,
   sessionDir,
+  configure, getActive, startSession, captureStep, endActive, cancelActive,
+  IDLE_MS,
 };
