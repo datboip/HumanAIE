@@ -979,13 +979,16 @@
   <div id="tabbar">
     <button id="new-tab-btn" onclick="newTab()" title="New Tab">+</button>
     <!-- Pinned green PHONE tab — always present, can't close. Switches Cam UI to Android mode. -->
+    <!-- Flows tab — sits to the LEFT of HANDROID. Contains the captured
+         sessions (what the AI tried) and approved workflows (canonical
+         recipes the AI can reference next time). -->
+    <div id="teach-tab" class="tab teach-tab" title="AI sessions + approved workflows">
+      <span class="tab-title">📂 Flows</span>
+      <span id="teach-tab-indicator" class="teach-tab-indicator" title="active session"></span>
+    </div>
     <div id="phone-tab" class="tab phone-tab" title="Android phone view">
       <span class="tab-title">📱 HANDROID</span>
       <span id="phone-tab-indicator" class="phone-tab-indicator" data-state="unknown"></span>
-    </div>
-    <div id="teach-tab" class="tab teach-tab" title="Workflow capture + replay (P1)">
-      <span class="tab-title">🎓 Teach</span>
-      <span id="teach-tab-indicator" class="teach-tab-indicator" title="active session"></span>
     </div>
   </div>
 
@@ -1788,8 +1791,8 @@
       while (landing.firstChild) landing.removeChild(landing.firstChild);
       var grid = document.createElement('div');
       grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px';
-      grid.appendChild(buildLandingColumn('Recent sessions', sessions, renderSessionRow));
-      grid.appendChild(buildLandingColumn('Saved workflows (consulted by AI in P3)', workflows, renderWorkflowRow));
+      grid.appendChild(buildLandingColumn('Recent attempts (click any → review + save as flow)', sessions, renderSessionRow));
+      grid.appendChild(buildLandingColumn('Approved flows (AI references these on repeat tasks)', workflows, renderWorkflowRow));
       landing.appendChild(grid);
     });
   }
