@@ -165,6 +165,103 @@ function pushAction(type, detail, status = 'ok', extra = {}) {
   console.log(`[${status.toUpperCase()}] ${type}: ${detail}`);
 }
 
+// ── Calibration target (mobile web page captures real touch coords) ─────────
+// The page at /calibrate-target loads on the phone's Chrome; every touch it
+// receives gets POSTed back to /calibrate-target/report. The cam UI and the
+// /calibrate/start orchestrator pair each fired /android/tap with the
+// corresponding report to measure end-to-end click drift.
+const CALIB_REPORTS = [];
+const CALIB_MAX = 200;
+
+app.get('/calibrate-target', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'calibrate-target.html'));
+});
+
+app.post('/calibrate-target/report', (req, res) => {
+  const body = req.body || {};
+  if (typeof body.phoneX !== 'number' || typeof body.phoneY !== 'number') {
+    return res.status(400).json({ error: 'phoneX/phoneY required' });
+  }
+  const report = {
+    phoneX: body.phoneX, phoneY: body.phoneY,
+    clientX: body.clientX, clientY: body.clientY,
+    innerW: body.innerW, innerH: body.innerH,
+    screenW: body.screenW, screenH: body.screenH,
+    dpr: body.dpr, t: body.t || Date.now(),
+  };
+  CALIB_REPORTS.push(report);
+  if (CALIB_REPORTS.length > CALIB_MAX) CALIB_REPORTS.shift();
+  try {
+    pushAction('CalibrationReport', `(${Math.round(report.phoneX)}, ${Math.round(report.phoneY)})`, 'ok', {
+      phoneX: report.phoneX, phoneY: report.phoneY, t: report.t,
+    });
+  } catch {}
+  res.json({ ok: true });
+});
+
+app.get('/calibrate-target/reports', (req, res) => {
+  res.json({ reports: CALIB_REPORTS.slice(-50) });
+});
+
+// One-shot calibration orchestrator. AI agents call this to verify click
+// accuracy before driving the phone. Opens the target page on the phone,
+// fires 9 taps at known coords, waits for reports, returns drift summary.
+// Verdict: accurate (avg<5px) / minor-offset (<30) / misaligned (≥30) /
+// incomplete (<half reports).
+app.post('/calibrate/start', async (req, res) => {
+  try {
+    const base = 'http://127.0.0.1:' + (process.env.HUMANAIE_PORT || process.env.PORT || '3333');
+    const status = await fetch(base + '/android/status').then(r => r.json()).catch(() => null);
+    if (!status || !status.screen_w || !status.screen_h) {
+      return res.status(503).json({ error: 'phone not connected (no screen_w/h)' });
+    }
+    const W = status.screen_w, H = status.screen_h;
+    const positions = [];
+    for (const yf of [0.1, 0.5, 0.9]) {
+      for (const xf of [0.1, 0.5, 0.9]) {
+        positions.push({ px: Math.round(W * xf), py: Math.round(H * yf) });
+      }
+    }
+    CALIB_REPORTS.length = 0;
+    try {
+      await fetch(base + '/android/open-url', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: base + '/calibrate-target' }),
+      });
+    } catch {}
+    await new Promise(r => setTimeout(r, 2500));  // page load
+    for (const p of positions) {
+      try {
+        await fetch(base + '/android/tap', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ x: p.px, y: p.py, source: 'agent-phone' }),
+        });
+      } catch {}
+      await new Promise(r => setTimeout(r, 800));
+    }
+    await new Promise(r => setTimeout(r, 1500));  // trailing reports
+    const reports = CALIB_REPORTS.slice();
+    const pairs = positions.map((target, j) => {
+      const obs = reports[j] || null;
+      if (!obs) return { target, observed: null, dx: null, dy: null, err: null };
+      const dx = obs.phoneX - target.px;
+      const dy = obs.phoneY - target.py;
+      return { target, observed: { x: obs.phoneX, y: obs.phoneY }, dx, dy, err: Math.hypot(dx, dy) };
+    });
+    const captured = pairs.filter(p => p.observed);
+    const avg = captured.length ? captured.reduce((s, p) => s + p.err, 0) / captured.length : null;
+    const max = captured.length ? Math.max(...captured.map(p => p.err)) : null;
+    let verdict;
+    if (captured.length < positions.length / 2) verdict = 'incomplete';
+    else if (avg < 5) verdict = 'accurate';
+    else if (avg < 30) verdict = 'minor-offset';
+    else verdict = 'misaligned';
+    res.json({ ok: true, captured: captured.length, total: positions.length, avg_err_px: avg, max_err_px: max, verdict, pairs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // MJPEG stream — push-based live view, no polling needed
 app.get('/stream', (req, res) => {
   res.setHeader('Content-Type', 'multipart/x-mixed-replace; boundary=frame');

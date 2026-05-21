@@ -281,6 +281,23 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Launch a URL in the phone's default browser via Android intent.
+  // URL is whitelisted to plain http(s) — no scheme smuggling, no shell metachars.
+  // Used by the calibration suite to open /calibrate-target on the phone.
+  router.post('/open-url', async (req, res) => {
+    const url = req.body && req.body.url;
+    if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' });
+    if (!/^https?:\/\/[A-Za-z0-9._:\-]+(\/[^\s'"<>`]*)?$/.test(url)) {
+      return res.status(400).json({ error: 'invalid url (http/https only, no shell metachars)' });
+    }
+    try {
+      const out = await adbAsync('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', url);
+      res.json({ ok: true, stdout: String(out || '').trim() });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── Routes: tap, swipe, type, key ──────────────────────────────────────────
   router.post('/tap', async (req, res) => {
     const { x, y } = req.body || {};

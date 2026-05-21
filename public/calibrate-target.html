@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HumanAIE Calibration Target</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #fff; font-family: monospace; overscroll-behavior: none; }
+  #canvas { position: fixed; inset: 0; touch-action: none; }
+  .dot { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #3ddc84; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.7); pointer-events: none; }
+  .label { position: absolute; font-size: 11px; color: #3ddc84; text-shadow: 0 0 2px #000; pointer-events: none; padding: 2px 5px; background: rgba(0,0,0,0.65); border-radius: 3px; }
+  #hud { position: fixed; left: 8px; top: 8px; right: 8px; display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; pointer-events: none; }
+  #hud .left, #hud .right { background: rgba(0,0,0,0.72); padding: 6px 10px; border-radius: 4px; font-size: 12px; pointer-events: auto; }
+  #hud .right { display: flex; gap: 6px; }
+  button { background: #6633cc; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-family: inherit; font-size: 12px; cursor: pointer; }
+  #clear-btn { background: transparent; color: #888; border: 1px solid #444; padding: 4px 10px; }
+</style>
+</head><body>
+  <div id="canvas"></div>
+  <div id="hud">
+    <div class="left"><span id="status">Tap anywhere — dots will appear · 0 total</span></div>
+    <div class="right">
+      <button id="fs-btn">⛶ Fullscreen</button>
+      <button id="clear-btn">Clear</button>
+    </div>
+  </div>
+<script>
+(function() {
+  var $canvas = document.getElementById('canvas');
+  var $status = document.getElementById('status');
+  var n = 0;
+
+  function dotAt(clientX, clientY, phoneX, phoneY) {
+    var dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.style.left = clientX + 'px';
+    dot.style.top  = clientY + 'px';
+    $canvas.appendChild(dot);
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.style.left = (clientX + 10) + 'px';
+    label.style.top  = (clientY + 10) + 'px';
+    label.textContent = '#' + (++n) + ' (' + Math.round(phoneX) + ',' + Math.round(phoneY) + ')';
+    $canvas.appendChild(label);
+  }
+
+  function report(e) {
+    if (e.cancelable) e.preventDefault();
+    var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    var cx = t.clientX, cy = t.clientY;
+    var dpr = window.devicePixelRatio || 1;
+    // CSS pixels × dpr ≈ phone hardware pixels when the page fills the viewport
+    // 1:1. Phone coords correspond to what /android/tap takes.
+    var phoneX = cx * dpr;
+    var phoneY = cy * dpr;
+    dotAt(cx, cy, phoneX, phoneY);
+    $status.textContent = 'Last: (' + Math.round(phoneX) + ', ' + Math.round(phoneY) + ')  ·  ' + n + ' total';
+    fetch('/calibrate-target/report', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        clientX: cx, clientY: cy,
+        phoneX: phoneX, phoneY: phoneY,
+        innerW: window.innerWidth, innerH: window.innerHeight,
+        screenW: window.screen.width, screenH: window.screen.height,
+        dpr: dpr, t: Date.now(),
+      }),
+    }).catch(function() {});
+  }
+
+  // touchstart on the phone, pointerdown on desktop. Skip pointerdown when
+  // pointerType is touch so we don't double-fire.
+  $canvas.addEventListener('touchstart', report, { passive: false });
+  $canvas.addEventListener('pointerdown', function(e) {
+    if (e.pointerType === 'touch') return;
+    report(e);
+  });
+
+  document.getElementById('fs-btn').addEventListener('click', function() {
+    var el = document.documentElement;
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
+    if (fn) {
+      try { fn.call(el); } catch (e) {}
+    }
+  });
+  document.getElementById('clear-btn').addEventListener('click', function() {
+    while ($canvas.firstChild) $canvas.removeChild($canvas.firstChild);
+    n = 0;
+    $status.textContent = 'Cleared — tap anywhere · 0 total';
+  });
+})();
+</script>
+</body></html>
