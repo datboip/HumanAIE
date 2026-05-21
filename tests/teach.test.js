@@ -373,3 +373,26 @@ test('PATCH /teach/sessions/:id/steps round-trip', async (t) => {
   });
   assert.strictEqual(missing.status, 404);
 });
+
+test('promoteSessionToWorkflow writes status:approved and source_kind:human-promoted', () => {
+  const teachDir = tmpDir();
+  const wfDir = tmpDir();
+  teach.configure({ rootDir: teachDir });
+  teach.configureWorkflows({ rootDir: wfDir });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 },
+    screenshotBuffer: Buffer.alloc(200, 0xff),
+    metaArgs: { package: 'com.test', activity: '.A' } });
+  const id = teach.getActive().id;
+  teach.endActive('done');
+  const wf = teach.promoteSessionToWorkflow(id, { name: 'Test flow' });
+  assert.strictEqual(wf.status, 'approved');
+  assert.strictEqual(wf.source_kind, 'human-promoted');
+  assert.strictEqual(wf.intent, 'Test flow');         // defaults to name when not passed
+  assert.strictEqual(wf.success_count, 0);
+  assert.strictEqual(wf.rejected_reason, null);
+  // Round-trip from disk
+  const loaded = teach.readWorkflow(wf.id);
+  assert.strictEqual(loaded.status, 'approved');
+});
