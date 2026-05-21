@@ -280,8 +280,25 @@ function readWorkflow(id) {
 }
 
 function workflowPathById(id) {
-  for (const wf of listWorkflows()) {
-    if (wf.id === id) return path.join(workflowDir(wf.package, wf.activity, slugify(wf.name)), 'workflow.json');
+  // Scan the actual directory tree rather than recomputing from slugify(name),
+  // because edit workflows are stored under slugs that include a timestamp
+  // suffix (e.g. "orig-edit-<ts>") which does not match slugify(name).
+  if (!workflowsRoot || !fs.existsSync(workflowsRoot)) return null;
+  for (const pkgDir of fs.readdirSync(workflowsRoot)) {
+    const pkgPath = path.join(workflowsRoot, pkgDir);
+    if (!fs.statSync(pkgPath).isDirectory()) continue;
+    for (const actDir of fs.readdirSync(pkgPath)) {
+      const actPath = path.join(pkgPath, actDir);
+      if (!fs.statSync(actPath).isDirectory()) continue;
+      for (const slug of fs.readdirSync(actPath)) {
+        const wfPath = path.join(actPath, slug, 'workflow.json');
+        if (!fs.existsSync(wfPath)) continue;
+        try {
+          const wf = JSON.parse(fs.readFileSync(wfPath, 'utf-8'));
+          if (wf.id === id) return wfPath;
+        } catch {}
+      }
+    }
   }
   return null;
 }
@@ -467,6 +484,34 @@ function proposeWorkflowEdit(parentId, steps, editReason) {
   return wf;
 }
 
+function applyEditToParent(editId) {
+  if (!workflowsRoot) throw new Error('workflows not configured');
+  const edit = readWorkflow(editId);
+  if (!edit) throw new Error('edit not found');
+  if (edit.status !== 'proposed-edit') throw new Error('not a proposed-edit workflow');
+  if (!edit.parent) throw new Error('edit has no parent reference');
+  const parent = readWorkflow(edit.parent);
+  if (!parent) throw new Error('parent no longer exists');
+  // Merge: parent keeps id/name/intent/counts/history; gains edit's steps + screen dims.
+  parent.steps = edit.steps;
+  parent.screen_w = edit.screen_w;
+  parent.screen_h = edit.screen_h;
+  parent.updated_at = Date.now();
+  // Approving an edit implicitly clears any flag on the parent (the AI's
+  // edit IS the fix; the human's approval IS the verification).
+  parent.flagged = false;
+  parent.flag_reason = null;
+  parent.flagged_at = null;
+  const parentPath = workflowPathById(parent.id);
+  if (parentPath) writeWorkflowJson(parentPath, parent);
+  // Delete sibling on disk
+  const editPath = workflowPathById(edit.id);
+  if (editPath) {
+    try { fs.rmSync(require('path').dirname(editPath), { recursive: true, force: true }); } catch {}
+  }
+  return parent;
+}
+
 // ── Intent matching (P3 /flows) ─────────────────────────────────────────────
 // Scores how well a workflow matches a free-text intent query. Pure function;
 // no I/O. See spec 2026-05-20 § matchIntent for threshold rationale.
@@ -644,13 +689,35 @@ router.patch('/workflows/:id', (req, res) => {
 router.patch('/workflows/:id/status', (req, res) => {
   if (!isSafeId(req.params.id)) return res.status(400).end();
   const status = req.body && req.body.status;
-  // 'proposed' is a valid target — the un-reject UI flow moves rejected workflows
-  // back to proposed for human re-review.
   if (status !== 'proposed' && status !== 'approved' && status !== 'rejected') {
     return res.status(400).json({ error: 'status must be proposed/approved/rejected' });
   }
   const wf = readWorkflow(req.params.id);
   if (!wf) return res.status(404).json({ error: 'not found' });
+  // proposed-edit branch: approve merges into parent + deletes sibling;
+  // reject deletes sibling only; any other target status is invalid here.
+  if (wf.status === 'proposed-edit') {
+    if (status === 'approved') {
+      try {
+        const merged = applyEditToParent(req.params.id);
+        return res.json({ ok: true, workflow: merged });
+      } catch (e) {
+        if (e.message === 'parent no longer exists') return res.status(410).json({ error: e.message });
+        return res.status(500).json({ error: e.message });
+      }
+    }
+    if (status === 'rejected') {
+      const wfPath = workflowPathById(req.params.id);
+      if (wfPath) {
+        try { fs.rmSync(require('path').dirname(wfPath), { recursive: true, force: true }); } catch {}
+      }
+      return res.json({ ok: true });
+    }
+    return res.status(400).json({ error: 'proposed-edit can only be approved or rejected' });
+  }
+  // Regular workflow branch (P3 behavior preserved).
+  // 'proposed' is a valid target — the un-reject UI flow moves rejected workflows
+  // back to proposed for human re-review.
   wf.status = status;
   // Reason clears whenever we move OFF rejected, so subsequent reads see a clean slate.
   wf.rejected_reason = (status === 'rejected') ? (req.body.rejected_reason || null) : null;
@@ -727,7 +794,7 @@ module.exports = {
   slugify, workflowDir, workflowPathById, writeWorkflowJson,
   promoteSessionToWorkflow, proposeSessionAsWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
   flagWorkflow, unflagWorkflow,
-  proposeWorkflowEdit, findPendingEditFor,
+  proposeWorkflowEdit, findPendingEditFor, applyEditToParent,
   matchIntent,
   withDefaults,
 };

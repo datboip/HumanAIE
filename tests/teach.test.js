@@ -1064,3 +1064,98 @@ test('POST /workflows/:id/propose-edit creates a proposed-edit sibling; 409 on s
   });
   assert.strictEqual(empty.status, 400);
 });
+
+test('applyEditToParent replaces parent steps + deletes sibling + preserves parent metadata', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  const parentDir = path.join(wfDir, 'com-test', 'a', 'q');
+  fs.mkdirSync(parentDir, { recursive: true });
+  fs.writeFileSync(path.join(parentDir, 'workflow.json'), JSON.stringify({
+    id: 'wf-q', name: 'q', intent: 'q intent', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [{ index: 0, action: 'tap', args: { x: 1, y: 1 } }],
+    created_at: 1000, updated_at: 1000, source: 's', use_count: 5, success_count: 3,
+    rejected_reason: null,
+  }));
+  const edit = teach.proposeWorkflowEdit('wf-q', [
+    { index: 0, action: 'tap', args: { x: 100, y: 200 } },
+    { index: 1, action: 'tap', args: { x: 300, y: 400 } },
+  ], 'new app version');
+
+  const merged = teach.applyEditToParent(edit.id);
+  // Parent now has the edit's steps but original id/name/counts
+  assert.strictEqual(merged.id, 'wf-q');
+  assert.strictEqual(merged.name, 'q');
+  assert.strictEqual(merged.intent, 'q intent');
+  assert.strictEqual(merged.use_count, 5);
+  assert.strictEqual(merged.success_count, 3);
+  assert.strictEqual(merged.steps.length, 2);
+  assert.deepStrictEqual(merged.steps[0].args, { x: 100, y: 200 });
+  // Sibling deleted
+  assert.strictEqual(teach.readWorkflow(edit.id), null);
+});
+
+test('PATCH /workflows/:edit-id/status approved merges into parent; rejected just deletes sibling', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13352', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) { clearTimeout(timer); resolve(true); }
+    });
+  });
+  assert.ok(ready);
+
+  const dir = path.join(dataDir, 'workflows', 'com-test', 'a', 'r');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-r', name: 'r', intent: 'r', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [{ index: 0, action: 'tap', args: { x: 1, y: 1 } }],
+    created_at: 1000, updated_at: 1000, source: 's', use_count: 7, success_count: 4,
+    rejected_reason: null,
+  }));
+
+  // Propose an edit
+  const propose = await fetch('http://127.0.0.1:13352/workflows/wf-r/propose-edit', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [{ index: 0, action: 'tap', args: { x: 9, y: 9 } }], edit_reason: 'fix' }),
+  }).then(r => r.json());
+  const editId = propose.edit_workflow.id;
+
+  // Approve the edit → merge into parent
+  const approve = await fetch('http://127.0.0.1:13352/workflows/' + editId + '/status', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'approved' }),
+  });
+  assert.strictEqual(approve.status, 200);
+  const merged = (await approve.json()).workflow;
+  assert.strictEqual(merged.id, 'wf-r');
+  assert.strictEqual(merged.use_count, 7);
+  assert.deepStrictEqual(merged.steps[0].args, { x: 9, y: 9 });
+
+  // Edit sibling is gone
+  const list = await fetch('http://127.0.0.1:13352/workflows').then(r => r.json());
+  assert.strictEqual(list.find(w => w.id === editId), undefined);
+
+  // Propose + reject a second edit
+  const propose2 = await fetch('http://127.0.0.1:13352/workflows/wf-r/propose-edit', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [{ index: 0, action: 'tap', args: { x: 0, y: 0 } }], edit_reason: 'bad' }),
+  }).then(r => r.json());
+  const reject = await fetch('http://127.0.0.1:13352/workflows/' + propose2.edit_workflow.id + '/status', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'rejected' }),
+  });
+  assert.strictEqual(reject.status, 200);
+  // Parent still has the previously-approved (9, 9) steps
+  const parentAfter = await fetch('http://127.0.0.1:13352/workflows').then(r => r.json());
+  const parentRow = parentAfter.find(w => w.id === 'wf-r');
+  assert.deepStrictEqual(parentRow.steps[0].args, { x: 9, y: 9 });
+});
