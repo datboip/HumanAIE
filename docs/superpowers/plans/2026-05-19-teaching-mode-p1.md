@@ -1755,10 +1755,10 @@ cd ~/projects/HumanAIE
 git pull
 pkill -9 -f "node.*HumanAIE/server.js"
 sleep 2
-systemd-run --user --scope --no-block /home/garage/.nvm/versions/node/v22.22.1/bin/node /home/garage/projects/HumanAIE/server.js
+systemd-run --user --scope --no-block <phone-home>/.nvm/versions/node/v22.22.1/bin/node <phone-home>/projects/HumanAIE/server.js
 ```
 
-Close + reopen the browser tab on `http://192.168.2.90:3333/cam/`.
+Close + reopen the browser tab on `http://<phone-host>:3333/cam/`.
 
 - [ ] **Step 2: Verify 🎓 Teach tab exists**
 
@@ -1790,7 +1790,7 @@ You should see at least one workflow dir + a teach-session dir.
 
 Use whatever the current waitfor start endpoint is (search by `grep -n "waitfor-highlight" server.js`):
 ```bash
-curl -X POST -H 'content-type: application/json' -d '{"message":"where is the post button?"}' http://192.168.2.90:3333/waitfor-highlight
+curl -X POST -H 'content-type: application/json' -d '{"message":"where is the post button?"}' http://<phone-host>:3333/waitfor-highlight
 ```
 Then click on the phone viewport in the cam UI to resolve. Switch to 🎓 Teach.
 Expected: a row with `✕ stuck — needs help` and the question text. Click → editor shows the red-bordered stuck step.

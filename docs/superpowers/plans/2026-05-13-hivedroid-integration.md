@@ -10,7 +10,7 @@
 
 **Spec reference:** `docs/superpowers/specs/2026-05-13-hivedroid-integration-design.md`
 
-**Source for ADB code being ported:** `/home/rickburp/Projects/.dormant/hiveclaw/nanoclaw/groups/telegram_main/android-ui/server.js`
+**Source for ADB code being ported:** `<user>/Projects/.dormant/hiveclaw/nanoclaw/groups/telegram_main/android-ui/server.js`
 
 ---
 

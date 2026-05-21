@@ -175,13 +175,13 @@ app.get('/calibrate-target/reports', function(req, res) {
 - [ ] **Step 3: Smoke test the page loads + report stores**
 
 ```bash
-ssh garage@192.168.2.90 "git pull && fuser -k 3333/tcp; sleep 2; systemd-run --user --scope --no-block bash -lc 'cd /home/garage/projects/HumanAIE && /home/garage/.nvm/versions/node/v22.22.1/bin/node server.js >> /tmp/humanaie.log 2>&1'"
+ssh <user>@<phone-host> "git pull && fuser -k 3333/tcp; sleep 2; systemd-run --user --scope --no-block bash -lc 'cd <phone-home>/projects/HumanAIE && <phone-home>/.nvm/versions/node/v22.22.1/bin/node server.js >> /tmp/humanaie.log 2>&1'"
 sleep 4
-ssh garage@192.168.2.90 "curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3333/calibrate-target"
+ssh <user>@<phone-host> "curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3333/calibrate-target"
 # expected: 200
-ssh garage@192.168.2.90 "curl -sS -X POST -H 'content-type: application/json' -d '{\"phoneX\":540,\"phoneY\":1200}' http://127.0.0.1:3333/calibrate-target/report"
+ssh <user>@<phone-host> "curl -sS -X POST -H 'content-type: application/json' -d '{\"phoneX\":540,\"phoneY\":1200}' http://127.0.0.1:3333/calibrate-target/report"
 # expected: {\"ok\":true}
-ssh garage@192.168.2.90 "curl -sS http://127.0.0.1:3333/calibrate-target/reports"
+ssh <user>@<phone-host> "curl -sS http://127.0.0.1:3333/calibrate-target/reports"
 # expected: {\"reports\":[{\"phoneX\":540,\"phoneY\":1200,...}]}
 ```
 
@@ -263,7 +263,7 @@ Note: the URL whitelist regex blocks shell metachars and protocol smuggling. Onl
 - [ ] **Step 2: Smoke test**
 
 ```bash
-ssh garage@192.168.2.90 "curl -sS -X POST -H 'content-type: application/json' -d '{\"url\":\"http://192.168.2.90:3333/calibrate-target\"}' http://127.0.0.1:3333/android/open-url"
+ssh <user>@<phone-host> "curl -sS -X POST -H 'content-type: application/json' -d '{\"url\":\"http://<phone-host>:3333/calibrate-target\"}' http://127.0.0.1:3333/android/open-url"
 # expected: {\"ok\":true,...}
 # Phone's Chrome should open the calibration page.
 ```
@@ -303,7 +303,7 @@ window.calibrateFullSuite = function() {
   state.calibratingFull = true;
 
   var positions = buildCalibrationGrid();
-  var phoneHost = location.host; // e.g. 192.168.2.90:3333
+  var phoneHost = location.host; // e.g. <phone-host>:3333
   var targetUrl = location.protocol + '//' + phoneHost + '/calibrate-target';
 
   if (!confirm('This will:\\n  1. Open ' + targetUrl + ' in Chrome on the phone\\n  2. Fire 9 taps at known coords\\n  3. Show drift between fired vs observed\\n\\nMake sure the phone is unlocked. Continue?')) {

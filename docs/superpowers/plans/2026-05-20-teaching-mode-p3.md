@@ -1395,10 +1395,10 @@ cd ~/projects/HumanAIE
 git pull
 pkill -9 -f "node.*HumanAIE/server.js"
 sleep 2
-systemd-run --user --scope --no-block /home/garage/.nvm/versions/node/v22.22.1/bin/node /home/garage/projects/HumanAIE/server.js
+systemd-run --user --scope --no-block <phone-home>/.nvm/versions/node/v22.22.1/bin/node <phone-home>/projects/HumanAIE/server.js
 ```
 
-Close + reopen the browser tab on `http://192.168.2.90:3333/cam/`.
+Close + reopen the browser tab on `http://<phone-host>:3333/cam/`.
 
 - [ ] **Step 2: Verify the three-section workflows column**
 
@@ -1415,12 +1415,12 @@ From a terminal:
 ```bash
 # Simulate AI: capture a session by tapping in HANDROID
 curl -X POST -H 'content-type: application/json' -d '{"x":540,"y":1500}' \
-  http://192.168.2.90:3333/android/tap
+  http://<phone-host>:3333/android/tap
 
 # Auto-propose the active session (need its ID first)
-SESS=$(curl -sS http://192.168.2.90:3333/teach/sessions | jq -r '.[0].id')
+SESS=$(curl -sS http://<phone-host>:3333/teach/sessions | jq -r '.[0].id')
 curl -X POST -H 'content-type: application/json' -d '{"name":"Test propose","intent":"test the propose flow"}' \
-  http://192.168.2.90:3333/teach/sessions/$SESS/propose
+  http://<phone-host>:3333/teach/sessions/$SESS/propose
 ```
 
 Reload 📂 Flows. "Test propose" should appear in the 🟡 Proposed (1) section with ✓ and ✕ buttons.
@@ -1432,7 +1432,7 @@ Click ✓ on the proposed row. The row should disappear from Proposed and reappe
 - [ ] **Step 5: Test GET /flows**
 
 ```bash
-curl -sS "http://192.168.2.90:3333/flows?package=com.test&intent=test%20the%20propose%20flow" | jq
+curl -sS "http://<phone-host>:3333/flows?package=com.test&intent=test%20the%20propose%20flow" | jq
 ```
 
 Expected JSON: `{ workflow: { id: "...", name: "Test propose", status: "approved", ... }, confidence: 0.9 }`.
@@ -1455,9 +1455,9 @@ Find a workflow's ID in the Approved column (or via `curl /workflows`). Simulate
 WFID="wf-..."  # paste an approved workflow ID
 curl -X POST -H 'content-type: application/json' \
   -d '{"x":540,"y":1200,"replay_of":"'$WFID'"}' \
-  http://192.168.2.90:3333/android/tap
+  http://<phone-host>:3333/android/tap
 curl -X POST -H 'content-type: application/json' -d '{}' \
-  http://192.168.2.90:3333/teach/done
+  http://<phone-host>:3333/teach/done
 ```
 
 Reload Flows. The workflow's `(N×)` counter should have incremented.
