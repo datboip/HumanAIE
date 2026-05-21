@@ -366,6 +366,74 @@ fired tap with the touch reported by the page. Recommended call points:
 - After a screen rotation event (landscape ↔ portrait).
 - Any time `/waitfor-highlight` resolves with a "click missed target" reason.
 
+### Skill discovery (P4)
+
+Before exploring a new app, query the catalog:
+
+```
+GET /flows/catalog?package=com.instagram.android
+```
+
+Returns the full list of skills for that app (approved + flagged counts plus
+per-skill metadata: intent, success_rate, use_count, has_pending_edit, flagged
+status with reason). Scan this once at session start to know what skills are
+available. Use `/flows` when you need to match a specific intent to a workflow.
+
+Skills are sorted with flagged flows first (your attention items), then by
+success_rate, then by recency.
+
+### Flagging a degraded flow
+
+If you replay a flow and it fails (a tap missed its target, a step landed on
+unexpected content, you needed to call `/waitfor-highlight` mid-replay), flag
+the flow so the human knows it drifted:
+
+```
+POST /workflows/wf-.../flag
+{ "reason": "step 3 tap at (520, 1180) missed the post button — got 'home' instead" }
+```
+
+The flow keeps serving but gets a ⚠ badge in the UI. Do this BEFORE trying to
+explore your way around the failure — the human seeing the flag is the trigger
+for them to either fix the flow themselves or wait for you to propose an edit.
+
+To clear a flag (after verifying the flow is healthy again):
+
+```
+POST /workflows/wf-.../unflag
+```
+
+### Proposing an edit
+
+If you've identified what's wrong and have a fix, propose an edit instead of
+asking the human to make it:
+
+```
+POST /workflows/wf-.../propose-edit
+{
+  "steps": [...amended step array...],
+  "edit_reason": "step 3 coord moved from (520, 1180) to (540, 1200) after IG v210 UI change"
+}
+```
+
+The edit lives as a sibling workflow with `status: "proposed-edit"`. The
+original keeps serving until the human approves. After approval, the original's
+steps are replaced in place (id, name, intent, use_count, success_count are all
+preserved). Approval also auto-clears any flag on the parent.
+
+Only one pending edit per parent — a second `/propose-edit` while one is
+pending returns 409 with `pending_edit_id` pointing to the existing one. If
+you need to revise your edit before the human reviews it, `DELETE /workflows/<pending_edit_id>`
+first, then re-propose.
+
+### Cultural rule (P4 amendment)
+
+If you flag a flow more than 3 times for the same reason without proposing an
+edit, you're failing the contract. Either propose an edit or call
+`/waitfor-highlight` asking the human for the new coord. The point of
+proposing edits is to keep the human's review queue short — flag-and-wait is
+worse than propose-and-wait because the human has nothing concrete to act on.
+
 ---
 
 ## Claude Code Plugin
