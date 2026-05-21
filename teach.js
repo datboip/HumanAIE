@@ -211,7 +211,7 @@ function workflowDir(pkg, activity, slug) {
   return path.join(workflowsRoot, slugify(pkg || 'unknown'), slugify(activity || 'unknown'), slug);
 }
 
-function listWorkflows({ package: pkgFilter, activity: actFilter } = {}) {
+function listWorkflows({ package: pkgFilter, activity: actFilter, status: statusFilter } = {}) {
   if (!workflowsRoot || !fs.existsSync(workflowsRoot)) return [];
   const out = [];
   for (const pkgDir of fs.readdirSync(workflowsRoot)) {
@@ -227,6 +227,7 @@ function listWorkflows({ package: pkgFilter, activity: actFilter } = {}) {
           const wf = withDefaults(JSON.parse(fs.readFileSync(wfPath, 'utf-8')));
           if (pkgFilter && wf.package !== pkgFilter) continue;
           if (actFilter && wf.activity !== actFilter) continue;
+          if (statusFilter && wf.status !== statusFilter) continue;
           out.push(wf);
         } catch {}
       }
@@ -446,7 +447,11 @@ router.post('/teach/sessions/:id/propose', (req, res) => {
 });
 
 router.get('/workflows', (req, res) => {
-  res.json(listWorkflows({ package: req.query.package, activity: req.query.activity }));
+  res.json(listWorkflows({
+    package: req.query.package,
+    activity: req.query.activity,
+    status: req.query.status,
+  }));
 });
 
 router.get('/workflows/:id', (req, res) => {

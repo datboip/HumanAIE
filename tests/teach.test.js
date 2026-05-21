@@ -507,3 +507,44 @@ test('PATCH /workflows/:id/status accepts approved/proposed/rejected', async (t)
   });
   assert.strictEqual(bad.status, 400);
 });
+
+test('GET /workflows?status=proposed returns only proposed workflows', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13343', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // Seed three workflows: one approved, one proposed, one rejected
+  const baseDir = path.join(dataDir, 'workflows', 'com-test', 'a');
+  for (const [slug, status, id] of [['ap', 'approved', 'wf-ap'], ['pr', 'proposed', 'wf-pr'], ['rj', 'rejected', 'wf-rj']]) {
+    const dir = path.join(baseDir, slug);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+      id, name: slug, intent: slug, status, source_kind: 'human-promoted',
+      package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
+      steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
+      success_count: 0, rejected_reason: null,
+    }));
+  }
+
+  const all = await fetch('http://127.0.0.1:13343/workflows').then(r => r.json());
+  assert.strictEqual(all.length, 3);
+
+  const proposed = await fetch('http://127.0.0.1:13343/workflows?status=proposed').then(r => r.json());
+  assert.strictEqual(proposed.length, 1);
+  assert.strictEqual(proposed[0].id, 'wf-pr');
+});
