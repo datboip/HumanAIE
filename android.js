@@ -292,6 +292,7 @@ if (!ADB_AVAILABLE) {
         action: 'tap', args: { x: xi, y: yi },
         screenshotBuffer: captureSessionFrame(),
         metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
+        replay_of: req.body && req.body.replay_of,
       });
       // Broadcast with whatever source the caller indicated (defaults to
       // 'agent-phone' for external AI agents). Frontend SSE handler
@@ -316,6 +317,7 @@ if (!ADB_AVAILABLE) {
         args: { x1: Math.round(x1), y1: Math.round(y1), x2: Math.round(x2), y2: Math.round(y2), dur: safeDur },
         screenshotBuffer: captureSessionFrame(),
         metaArgs: { device: SERIAL_REF.current, screen_w: cachedScreenW, screen_h: cachedScreenH },
+        replay_of: req.body && req.body.replay_of,
       });
       // Broadcast with the caller's source so the frontend can differentiate
       // (humans need the trail without the cursor flicker; AI gets both).

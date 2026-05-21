@@ -751,3 +751,23 @@ test('GET /flows returns null with low-confidence reason below 0.4 threshold', a
   assert.ok(typeof res.confidence === 'number');
   assert.ok(res.confidence < 0.4);
 });
+
+test('captureStep records replay_of on the session', () => {
+  const root = tmpDir();
+  teach.configure({ rootDir: root });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  teach.captureStep({
+    action: 'tap', args: { x: 1, y: 2 },
+    metaArgs: { package: 'com.foo', activity: '.a' },
+    replay_of: 'wf-abc',
+  });
+  const active = teach.getActive();
+  assert.strictEqual(active.replay_of, 'wf-abc');
+
+  // Subsequent capture without replay_of doesn't clear it
+  teach.captureStep({ action: 'tap', args: { x: 3, y: 4 } });
+  assert.strictEqual(teach.getActive().replay_of, 'wf-abc');
+
+  teach.endActive('test-cleanup');
+});

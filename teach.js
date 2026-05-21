@@ -82,6 +82,7 @@ function writeSessionMeta(rootDir, session) {
     help_question: session.help_question,
     help_resolved: session.help_resolved,
     step_count: session.steps.length,
+    replay_of: session.replay_of ?? null,
   };
   fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
 }
@@ -164,8 +165,14 @@ function startSession(metaArgs) {
   return activeSession;
 }
 
-function captureStep({ action, args, screenshotBuffer = null, metaArgs = null }) {
+function captureStep({ action, args, screenshotBuffer = null, metaArgs = null, replay_of = null }) {
   if (!activeSession || activeSession.ended_at !== null) startSession(metaArgs || {});
+  // Tag the active session with replay_of on the FIRST call that supplies it.
+  // Subsequent calls in the same session don't re-tag (a session represents
+  // one replay attempt; replay_of is set-once).
+  if (replay_of && !activeSession.replay_of) {
+    activeSession.replay_of = String(replay_of);
+  }
   const step = appendStep(activeSession, { action, args });
   if (!step) return null;
   if (screenshotBuffer && teachRoot) saveStepScreenshot(teachRoot, activeSession, step, screenshotBuffer);
