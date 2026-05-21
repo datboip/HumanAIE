@@ -1970,13 +1970,38 @@
   }
 
   function approveWorkflow(id) {
-    console.log('approveWorkflow stub', id);
+    fetch('/workflows/' + encodeURIComponent(id) + '/status', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Approve failed: ' + d.error); return; }
+      renderTeachLanding();
+    }).catch(function(err) { console.warn('approve failed', err); });
   }
+
   function rejectWorkflow(id) {
-    console.log('rejectWorkflow stub', id);
+    var reason = prompt('Why are you rejecting this flow? (optional)', '');
+    if (reason === null) return;  // user cancelled
+    fetch('/workflows/' + encodeURIComponent(id) + '/status', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'rejected', rejected_reason: reason || null }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Reject failed: ' + d.error); return; }
+      renderTeachLanding();
+    }).catch(function(err) { console.warn('reject failed', err); });
   }
+
   function unrejectWorkflow(id) {
-    console.log('unrejectWorkflow stub', id);
+    fetch('/workflows/' + encodeURIComponent(id) + '/status', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'proposed' }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Un-reject failed: ' + d.error); return; }
+      renderTeachLanding();
+    }).catch(function(err) { console.warn('unreject failed', err); });
   }
 
   function openTeachEditor(id, type) {
