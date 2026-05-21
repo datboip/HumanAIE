@@ -872,5 +872,12 @@ test('proposeSessionAsWorkflow writes P4 fields with default values', () => {
   teach.endActive('done');
   const wf = teach.proposeSessionAsWorkflow(id, { name: 'P4 propose', intent: 'p4' });
   assert.strictEqual(wf.flagged, false);
+  assert.strictEqual(wf.flag_reason, null);
+  assert.strictEqual(wf.flagged_at, null);
   assert.strictEqual(wf.parent, null);
+  assert.strictEqual(wf.edit_reason, null);
+  // Round-trip from disk
+  const loaded = teach.readWorkflow(wf.id);
+  assert.strictEqual(loaded.flagged, false);
+  assert.strictEqual(loaded.parent, null);
 });
