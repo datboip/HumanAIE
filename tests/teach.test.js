@@ -881,3 +881,92 @@ test('proposeSessionAsWorkflow writes P4 fields with default values', () => {
   assert.strictEqual(loaded.flagged, false);
   assert.strictEqual(loaded.parent, null);
 });
+
+test('flagWorkflow sets flagged + reason + timestamp', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  const dir = path.join(wfDir, 'com-test', 'a', 'tgt');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-tgt', name: 'tgt', intent: 'tgt', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 's', use_count: 0, success_count: 0, rejected_reason: null,
+  }));
+  const before = Date.now();
+  const wf = teach.flagWorkflow('wf-tgt', 'step 3 missed target');
+  assert.strictEqual(wf.flagged, true);
+  assert.strictEqual(wf.flag_reason, 'step 3 missed target');
+  assert.ok(wf.flagged_at >= before);
+  // Round-trip
+  const loaded = teach.readWorkflow('wf-tgt');
+  assert.strictEqual(loaded.flagged, true);
+});
+
+test('unflagWorkflow clears all three flag fields', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  const dir = path.join(wfDir, 'com-test', 'a', 'tgt2');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-tgt2', name: 'tgt2', intent: 'tgt2', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 's', use_count: 0, success_count: 0, rejected_reason: null,
+    flagged: true, flag_reason: 'something wrong', flagged_at: 5000,
+  }));
+  const wf = teach.unflagWorkflow('wf-tgt2');
+  assert.strictEqual(wf.flagged, false);
+  assert.strictEqual(wf.flag_reason, null);
+  assert.strictEqual(wf.flagged_at, null);
+});
+
+test('POST /workflows/:id/flag sets the flag; /unflag clears it', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13350', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) { clearTimeout(timer); resolve(true); }
+    });
+  });
+  assert.ok(ready);
+
+  const dir = path.join(dataDir, 'workflows', 'com-test', 'a', 'flagtgt');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-flag', name: 'flagtgt', intent: 'flag', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 's', use_count: 0, success_count: 0, rejected_reason: null,
+  }));
+
+  const flagRes = await fetch('http://127.0.0.1:13350/workflows/wf-flag/flag', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reason: 'drifted' }),
+  });
+  assert.strictEqual(flagRes.status, 200);
+  const flagBody = await flagRes.json();
+  assert.strictEqual(flagBody.workflow.flagged, true);
+  assert.strictEqual(flagBody.workflow.flag_reason, 'drifted');
+
+  const noReason = await fetch('http://127.0.0.1:13350/workflows/wf-flag/flag', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.strictEqual(noReason.status, 400);
+
+  const unflagRes = await fetch('http://127.0.0.1:13350/workflows/wf-flag/unflag', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+  });
+  assert.strictEqual(unflagRes.status, 200);
+  const unflagBody = await unflagRes.json();
+  assert.strictEqual(unflagBody.workflow.flagged, false);
+  assert.strictEqual(unflagBody.workflow.flag_reason, null);
+});

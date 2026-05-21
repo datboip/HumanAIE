@@ -388,6 +388,34 @@ function proposeSessionAsWorkflow(sessionId, { name, intent }) {
   return wf;
 }
 
+function flagWorkflow(id, reason) {
+  if (!workflowsRoot) throw new Error('workflows not configured');
+  const wf = readWorkflow(id);
+  if (!wf) throw new Error('workflow not found');
+  wf.flagged = true;
+  wf.flag_reason = String(reason || '').slice(0, 500);
+  wf.flagged_at = Date.now();
+  wf.updated_at = Date.now();
+  const wfPath = workflowPathById(id);
+  if (!wfPath) throw new Error('cannot resolve workflow path');
+  writeWorkflowJson(wfPath, wf);
+  return wf;
+}
+
+function unflagWorkflow(id) {
+  if (!workflowsRoot) throw new Error('workflows not configured');
+  const wf = readWorkflow(id);
+  if (!wf) throw new Error('workflow not found');
+  wf.flagged = false;
+  wf.flag_reason = null;
+  wf.flagged_at = null;
+  wf.updated_at = Date.now();
+  const wfPath = workflowPathById(id);
+  if (!wfPath) throw new Error('cannot resolve workflow path');
+  writeWorkflowJson(wfPath, wf);
+  return wf;
+}
+
 // ── Intent matching (P3 /flows) ─────────────────────────────────────────────
 // Scores how well a workflow matches a free-text intent query. Pure function;
 // no I/O. See spec 2026-05-20 § matchIntent for threshold rationale.
@@ -583,6 +611,24 @@ router.patch('/workflows/:id/status', (req, res) => {
   res.json({ ok: true, workflow: wf });
 });
 
+router.post('/workflows/:id/flag', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
+  const reason = req.body && req.body.reason;
+  if (!reason) return res.status(400).json({ error: 'reason required' });
+  try {
+    const wf = flagWorkflow(req.params.id, reason);
+    res.json({ ok: true, workflow: wf });
+  } catch (e) { res.status(404).json({ error: e.message }); }
+});
+
+router.post('/workflows/:id/unflag', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
+  try {
+    const wf = unflagWorkflow(req.params.id);
+    res.json({ ok: true, workflow: wf });
+  } catch (e) { res.status(404).json({ error: e.message }); }
+});
+
 router.delete('/workflows/:id', (req, res) => {
   if (!isSafeId(req.params.id)) return res.status(400).end();
   if (deleteWorkflow(req.params.id)) res.json({ ok: true });
@@ -610,6 +656,7 @@ module.exports = {
   router,
   slugify, workflowDir, workflowPathById, writeWorkflowJson,
   promoteSessionToWorkflow, proposeSessionAsWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
+  flagWorkflow, unflagWorkflow,
   matchIntent,
   withDefaults,
 };
