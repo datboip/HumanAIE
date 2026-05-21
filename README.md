@@ -281,6 +281,51 @@ Check highlight history before asking the human:
 The human can see everything you do in real-time at /cam/.
 ```
 
+### Phone agent workflow (P3 — Teaching Mode replay)
+
+AI agents driving the connected phone should consult approved flows before
+exploring. The contract:
+
+1. **Before starting a multi-step task, query for an approved flow:**
+
+   ```
+   GET /flows?package=com.instagram.android&intent=post%20a%20photo
+   ```
+
+   Returns `{ workflow, confidence }` if a match is found above the 0.4
+   confidence threshold, or `{ workflow: null, reason }` otherwise.
+
+2. **If a flow comes back, execute its steps in order:**
+
+   ```
+   POST /android/tap   { "x": 540, "y": 1200, "replay_of": "wf-..." }
+   POST /android/swipe { "x1": 540, "y1": 1800, "x2": 540, "y2": 600, "dur": 250, "replay_of": "wf-..." }
+   ```
+
+   Pass `replay_of` in each request so the captured session links back to the
+   source workflow. The server tracks `use_count` (attempts) and `success_count`
+   (completed via `/teach/done`).
+
+3. **On success, call `POST /teach/done`.** If you get stuck mid-replay, call
+   `POST /waitfor-highlight` with a clear question; the human's resolution is
+   captured as part of the session and you can resume.
+
+4. **If no flow matched and you succeeded by exploring, propose your session
+   as a new workflow:**
+
+   ```
+   POST /teach/sessions/:id/propose
+   { "name": "Post a photo", "intent": "post a photo to instagram feed" }
+   ```
+
+   The proposed flow appears in the 🟡 Proposed column of the Flows tab. After
+   the human clicks ✓ Approve, subsequent runs will pick it up via `/flows`.
+
+5. **Cultural rule (not server-enforced):** if you've tried more than ~3 times
+   to find an unknown UI element, stop spamming and call `/waitfor-highlight`
+   instead. Burning tokens on retries when the human is one click away is the
+   anti-pattern Teaching Mode is designed to eliminate.
+
 ---
 
 ## Claude Code Plugin
