@@ -1095,6 +1095,72 @@ test('applyEditToParent replaces parent steps + deletes sibling + preserves pare
   assert.strictEqual(teach.readWorkflow(edit.id), null);
 });
 
+test('GET /flows/catalog returns per-app digest with flagged + pending-edit metadata', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13353', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) { clearTimeout(timer); resolve(true); }
+    });
+  });
+  assert.ok(ready);
+
+  // Seed: one approved (flagged), one approved (with pending edit), one approved (clean).
+  const base = path.join(dataDir, 'workflows', 'com-cat', 'a');
+  fs.mkdirSync(path.join(base, 'flagged'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'flagged', 'workflow.json'), JSON.stringify({
+    id: 'wf-fl', name: 'flagged-flow', intent: 'fl', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.cat', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 's', use_count: 4, success_count: 1, rejected_reason: null,
+    flagged: true, flag_reason: 'drifted', flagged_at: 5000,
+  }));
+  fs.mkdirSync(path.join(base, 'withedit'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'withedit', 'workflow.json'), JSON.stringify({
+    id: 'wf-we', name: 'withedit-flow', intent: 'we', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.cat', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 2000,
+    source: 's', use_count: 10, success_count: 9, rejected_reason: null,
+  }));
+  fs.mkdirSync(path.join(base, 'withedit-edit-9999'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'withedit-edit-9999', 'workflow.json'), JSON.stringify({
+    id: 'wf-we-edit', name: 'withedit-flow (edit)', intent: 'we', status: 'proposed-edit',
+    source_kind: 'agent-edit', package: 'com.cat', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 9999, updated_at: 9999,
+    source: 's', use_count: 0, success_count: 0, rejected_reason: null,
+    parent: 'wf-we', edit_reason: 'fix',
+  }));
+  fs.mkdirSync(path.join(base, 'clean'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'clean', 'workflow.json'), JSON.stringify({
+    id: 'wf-cl', name: 'clean-flow', intent: 'cl', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.cat', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1500,
+    source: 's', use_count: 2, success_count: 2, rejected_reason: null,
+  }));
+
+  const res = await fetch('http://127.0.0.1:13353/flows/catalog?package=com.cat').then(r => r.json());
+  assert.strictEqual(res.approved_count, 3);
+  assert.strictEqual(res.flagged_count, 1);
+  assert.strictEqual(res.proposed_edit_count, 1);
+  assert.strictEqual(res.skills.length, 3);
+  // Flagged sorts first
+  assert.strictEqual(res.skills[0].id, 'wf-fl');
+  assert.strictEqual(res.skills[0].flagged, true);
+  assert.strictEqual(res.skills[0].flag_reason, 'drifted');
+  // wf-we has a pending edit
+  const we = res.skills.find(s => s.id === 'wf-we');
+  assert.strictEqual(we.has_pending_edit, true);
+  assert.strictEqual(we.pending_edit_id, 'wf-we-edit');
+  assert.strictEqual(we.success_rate, 0.9);
+});
+
 test('PATCH /workflows/:edit-id/status approved merges into parent; rejected just deletes sibling', async (t) => {
   const { spawn } = require('node:child_process');
   const path = require('node:path');

@@ -649,6 +649,50 @@ router.get('/flows', (req, res) => {
   res.json({ workflow: best.w, confidence: best.score });
 });
 
+router.get('/flows/catalog', (req, res) => {
+  const pkg = req.query.package;
+  const act = req.query.activity;
+  // Approved + flagged-approved live in the same set; flagged is just a hint.
+  const approved = listWorkflows({ package: pkg, activity: act, status: 'approved' });
+  const proposed = listWorkflows({ package: pkg, activity: act, status: 'proposed' });
+  const proposedEdits = listWorkflows({ package: pkg, activity: act, status: 'proposed-edit' });
+  const pendingByParent = {};
+  for (const e of proposedEdits) {
+    if (e.parent) pendingByParent[e.parent] = e.id;
+  }
+  const skills = approved.map(w => ({
+    id: w.id,
+    name: w.name,
+    intent: w.intent,
+    activity: w.activity,
+    step_count: (w.steps && w.steps.length) || 0,
+    use_count: w.use_count || 0,
+    success_count: w.success_count || 0,
+    success_rate: (w.use_count > 0) ? (w.success_count / w.use_count) : null,
+    flagged: !!w.flagged,
+    flag_reason: w.flag_reason || null,
+    has_pending_edit: !!pendingByParent[w.id],
+    pending_edit_id: pendingByParent[w.id] || null,
+    updated_at: w.updated_at,
+  }));
+  // Sort: flagged first (true > false), then highest success_rate, then most recent.
+  skills.sort((a, b) => {
+    if (a.flagged !== b.flagged) return a.flagged ? -1 : 1;
+    const ar = a.success_rate ?? -1, br = b.success_rate ?? -1;
+    if (br !== ar) return br - ar;
+    return (b.updated_at || 0) - (a.updated_at || 0);
+  });
+  res.json({
+    package: pkg || null,
+    activity: act || null,
+    approved_count: approved.length,
+    proposed_count: proposed.length,
+    proposed_edit_count: proposedEdits.length,
+    flagged_count: approved.filter(w => w.flagged).length,
+    skills: skills,
+  });
+});
+
 router.get('/workflows', (req, res) => {
   res.json(listWorkflows({
     package: req.query.package,
