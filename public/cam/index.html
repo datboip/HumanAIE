@@ -1835,10 +1835,9 @@
   function buildFlowsSubtabBar(allSessions, allWorkflows) {
     var bar = document.createElement('div');
     bar.style.cssText = 'display:flex;gap:4px;margin-bottom:12px;border-bottom:2px solid #2a2a2a;padding-bottom:0';
-    var phoneCount = allSessions.filter(function(x) { return x.package; }).length
-                   + allWorkflows.filter(function(x) { return x.package; }).length;
-    var webCount   = allSessions.filter(function(x) { return !x.package; }).length
-                   + allWorkflows.filter(function(x) { return !x.package; }).length;
+    var isWeb = function(x) { return !!(x && x.url); };
+    var webCount   = allSessions.filter(isWeb).length + allWorkflows.filter(isWeb).length;
+    var phoneCount = (allSessions.length + allWorkflows.length) - webCount;
     bar.appendChild(makeSubtabBtn('phone', '📱 Phone (' + phoneCount + ')'));
     bar.appendChild(makeSubtabBtn('web',   '🌐 Web (' + webCount + ')'));
     return bar;
