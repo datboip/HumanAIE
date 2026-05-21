@@ -438,3 +438,62 @@ test('POST /teach/sessions/:id/propose creates a proposed workflow', async (t) =
   assert.strictEqual(body.workflow.source_kind, 'agent-proposed');
   assert.strictEqual(body.workflow.intent, 'test the propose endpoint');
 });
+
+test('PATCH /workflows/:id/status accepts approved/proposed/rejected', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13342', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // Seed a workflow on disk
+  const wfDir = path.join(dataDir, 'workflows', 'com-test', 'a', 'seed');
+  fs.mkdirSync(wfDir, { recursive: true });
+  const wfId = 'wf-seed-1';
+  fs.writeFileSync(path.join(wfDir, 'workflow.json'), JSON.stringify({
+    id: wfId, name: 'Seed', intent: 'seed', status: 'proposed',
+    source_kind: 'agent-proposed', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 'seed', use_count: 0, success_count: 0, rejected_reason: null,
+  }));
+
+  // Approve
+  const approved = await fetch('http://127.0.0.1:13342/workflows/' + wfId + '/status', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'approved' }),
+  });
+  assert.strictEqual(approved.status, 200);
+  const approvedBody = await approved.json();
+  assert.strictEqual(approvedBody.workflow.status, 'approved');
+  assert.strictEqual(approvedBody.workflow.rejected_reason, null);
+
+  // Reject with reason
+  const rejected = await fetch('http://127.0.0.1:13342/workflows/' + wfId + '/status', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'rejected', rejected_reason: 'flow is wrong' }),
+  });
+  assert.strictEqual(rejected.status, 200);
+  const rejectedBody = await rejected.json();
+  assert.strictEqual(rejectedBody.workflow.status, 'rejected');
+  assert.strictEqual(rejectedBody.workflow.rejected_reason, 'flow is wrong');
+
+  // Invalid status
+  const bad = await fetch('http://127.0.0.1:13342/workflows/' + wfId + '/status', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'maybe' }),
+  });
+  assert.strictEqual(bad.status, 400);
+});
