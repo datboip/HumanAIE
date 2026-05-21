@@ -204,16 +204,23 @@ app.get('/calibrate-target/reports', (req, res) => {
 });
 
 // Ready beacon — the calibration page POSTs here when it has loaded and is
-// listening for touches. The orchestrator polls this timestamp to know when
-// it's safe to start firing taps. Without this, taps fire into whatever
-// app was open before Chrome navigated to /calibrate-target.
+// listening for touches, along with its current viewport dims. The
+// orchestrator uses both: the timestamp gates firing, and the dims let
+// it pick tap targets inside the visible page area (avoiding chrome at
+// the top or nav-bar at the bottom).
 let calibReadyAt = 0;
+let calibPageDims = null;  // { innerW, innerH, screenW, screenH, dpr, topOffsetCssPx, leftOffsetCssPx }
 app.post('/calibrate-target/ready', (req, res) => {
   calibReadyAt = Date.now();
+  if (req.body && typeof req.body.innerH === 'number') calibPageDims = req.body;
   res.json({ ok: true, t: calibReadyAt });
 });
 app.get('/calibrate-target/ready', (req, res) => {
-  res.json({ ready_at: calibReadyAt, age_ms: calibReadyAt ? Date.now() - calibReadyAt : null });
+  res.json({
+    ready_at: calibReadyAt,
+    age_ms: calibReadyAt ? Date.now() - calibReadyAt : null,
+    dims: calibPageDims,
+  });
 });
 
 // Clear tick — the cam UI / orchestrator POSTs here right before firing

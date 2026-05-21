@@ -2353,22 +2353,39 @@
   // 9 calibration points at 10%/50%/90% of width × height.
   // Used by both calibrateServerTaps (server-fires-taps test) and
   // calibrateClicks (interactive screenToPhone test).
-  function buildCalibrationGrid() {
+  // When `dims` is supplied (from the phone-side page's ready beacon),
+  // restrict tap targets to the page's actual visible area — keeps the top
+  // row from firing into Android's status bar / Chrome chrome (which
+  // silently swallows touches without delivering them to the page).
+  function buildCalibrationGrid(dims) {
     var W = androidStatus.screen_w || 1080;
     var H = androidStatus.screen_h || 2340;
+    var xLo = 0, xHi = W, yLo = 0, yHi = H;
+    if (dims && typeof dims.dpr === 'number') {
+      var dpr = dims.dpr || 1;
+      yLo = (dims.topOffsetCssPx || 0) * dpr;
+      yHi = yLo + (dims.innerH || (H / dpr)) * dpr;
+      xLo = (dims.leftOffsetCssPx || 0) * dpr;
+      xHi = xLo + (dims.innerW || (W / dpr)) * dpr;
+      // Safety margin: stay 40 phone-px clear of any chrome edge to avoid
+      // Android's edge-gesture zones (back-swipe at left/right, status-bar
+      // pull-down at top, gesture-nav handle at bottom).
+      var m = 40;
+      xLo += m; xHi -= m; yLo += m; yHi -= m;
+    }
     var positions = [];
-    var xs = [0.1, 0.5, 0.9], ys = [0.1, 0.5, 0.9];
+    var fracs = [0.1, 0.5, 0.9];
     var labels = ['TL','TC','TR','ML','C','MR','BL','BC','BR'];
     var i = 0;
-    for (var yi = 0; yi < ys.length; yi++) {
-      for (var xi = 0; xi < xs.length; xi++) {
+    fracs.forEach(function(yf) {
+      fracs.forEach(function(xf) {
         positions.push({
-          px: Math.round(W * xs[xi]),
-          py: Math.round(H * ys[yi]),
+          px: Math.round(xLo + (xHi - xLo) * xf),
+          py: Math.round(yLo + (yHi - yLo) * yf),
           label: labels[i++],
         });
-      }
-    }
+      });
+    });
     return positions;
   }
 
@@ -2596,7 +2613,7 @@
     if (!androidMode) { alert('Calibration only works in HANDROID mode.'); return; }
     if (state.calibratingFull) return;
     state.calibratingFull = true;
-    openCalibrationPanel(buildCalibrationGrid());
+    openCalibrationPanel();  // builds the grid lazily after ready, with phone dims
   };
 
   // Best-effort auto-open helper — also exposed so users can click the
@@ -2610,9 +2627,10 @@
     }).then(function(r) { return r.json(); });
   }
 
-  function openCalibrationPanel(positions) {
-    var pending = positions.map(function(p) { return { target: p, observed: null }; });
-    var firedAt = -1;
+  function openCalibrationPanel() {
+    // Mutable container so closures (renderRow, onCalibrationReport, runFiring)
+    // see updates after the ready beacon arrives with phone dims.
+    var run = { positions: [], pending: [], firedAt: -1 };
     var targetUrl = location.protocol + '//' + location.host + '/calibrate-target';
 
     // ---- Draggable panel ---------------------------------------------------
@@ -2745,18 +2763,24 @@
       pollReady();
     });
     var armed = false;
+    var pageDims = null;
     function pollReady() {
       if (!overlay.isConnected) return;
       fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.dims) pageDims = d.dims;
         if (!armed && d.ready_at && d.ready_at !== readyBefore) {
           armed = true;
+          // Build the grid using the phone's reported page area so taps
+          // always land inside the visible page (not the status bar).
+          run.positions = buildCalibrationGrid(pageDims);
+          run.pending = run.positions.map(function(p) { return { target: p, observed: null }; });
           startBtn.disabled = false;
           startBtn.style.background = '#0a3a18';
           startBtn.style.color = '#3ddc84';
           startBtn.style.borderColor = '#3ddc84';
           startBtn.style.cursor = 'pointer';
           startBtn.textContent = '▶ Start calibration (fires 9 taps)';
-          status.textContent = '✅ Phone connected · fullscreen active';
+          status.textContent = '✅ Phone connected · fullscreen active' + (pageDims ? ' (' + pageDims.innerW + '×' + pageDims.innerH + ' @ ' + pageDims.dpr + 'x)' : '');
           status.style.color = '#3ddc84';
         }
         setTimeout(pollReady, 700);
@@ -2797,25 +2821,25 @@
     }
 
     state.onCalibrationReport = function(data) {
-      if (firedAt < 0) return;
-      var pos = pending[firedAt];
+      if (run.firedAt < 0) return;
+      var pos = run.pending[run.firedAt];
       if (!pos || pos.observed) return;
       pos.observed = { x: data.phoneX, y: data.phoneY };
       renderRow(pos);
     };
 
     function runFiring() {
-      pending.forEach(renderRow);
+      run.pending.forEach(renderRow);
       var idx = 0;
       function fireNext() {
-        if (idx >= positions.length) {
+        if (idx >= run.positions.length) {
           setTimeout(function() {
-            var done = pending.filter(function(p) { return p.observed; });
+            var done = run.pending.filter(function(p) { return p.observed; });
             var summary = document.createElement('div');
             summary.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;text-align:center';
             if (done.length === 0) {
               summary.style.color = '#d80000';
-              summary.textContent = '0/' + positions.length + ' reports — phone page lost focus?';
+              summary.textContent = '0/' + run.positions.length + ' reports — phone page lost focus?';
             } else {
               var errs = done.map(function(p) { return Math.hypot(p.observed.x - p.target.px, p.observed.y - p.target.py); });
               var avgErr = errs.reduce(function(s, e) { return s + e; }, 0) / errs.length;
@@ -2823,9 +2847,52 @@
               var verdict = avgErr < 5 ? '✅ accurate' : avgErr < 30 ? '⚠ minor offset' : '❌ misaligned';
               summary.style.color = avgErr < 5 ? '#3ddc84' : avgErr < 30 ? '#cccc55' : '#d80000';
               summary.style.fontWeight = 'bold';
-              summary.textContent = done.length + '/' + positions.length + ' · avg ' + avgErr.toFixed(1) + 'px · max ' + maxErr.toFixed(1) + 'px · ' + verdict;
+              summary.textContent = done.length + '/' + run.positions.length + ' · avg ' + avgErr.toFixed(1) + 'px · max ' + maxErr.toFixed(1) + 'px · ' + verdict;
             }
             body.appendChild(summary);
+
+            // Copy-results button — turns the run into a one-shot
+            // human-readable + machine-parseable text the user can paste.
+            var copyRow = document.createElement('div');
+            copyRow.style.cssText = 'margin-top:8px;display:flex;gap:6px';
+            var copyBtn = document.createElement('button');
+            copyBtn.style.cssText = 'flex:1;padding:6px;background:transparent;color:#888;border:1px solid #444;border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px';
+            copyBtn.textContent = '📋 Copy results';
+            copyBtn.addEventListener('click', function() {
+              var lines = ['Calibration ' + new Date().toISOString()];
+              if (pageDims) lines.push('Page dims: ' + pageDims.innerW + 'x' + pageDims.innerH + ' @ ' + pageDims.dpr + 'x  (screen ' + pageDims.screenW + 'x' + pageDims.screenH + ', topOffset ' + pageDims.topOffsetCssPx + ' CSS px)');
+              lines.push('');
+              lines.push('Label  Target            Observed          Δx     Δy     err');
+              run.pending.forEach(function(p) {
+                if (p.observed) {
+                  var dx = p.observed.x - p.target.px, dy = p.observed.y - p.target.py;
+                  lines.push(p.target.label.padEnd(6) + ' (' + String(p.target.px).padStart(4) + ',' + String(p.target.py).padStart(4) + ')   (' + String(Math.round(p.observed.x)).padStart(4) + ',' + String(Math.round(p.observed.y)).padStart(4) + ')   ' + (dx >= 0 ? '+' : '') + String(Math.round(dx)).padStart(4) + '   ' + (dy >= 0 ? '+' : '') + String(Math.round(dy)).padStart(4) + '   ' + Math.hypot(dx, dy).toFixed(1) + 'px');
+                } else {
+                  lines.push(p.target.label.padEnd(6) + ' (' + String(p.target.px).padStart(4) + ',' + String(p.target.py).padStart(4) + ')   NO REPORT (tap absorbed by chrome or off-page)');
+                }
+              });
+              lines.push('');
+              lines.push(summary.textContent);
+              var text = lines.join('\n');
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                  copyBtn.textContent = '✓ Copied';
+                  setTimeout(function() { copyBtn.textContent = '📋 Copy results'; }, 1500);
+                }).catch(function() { fallbackCopy(text); });
+              } else { fallbackCopy(text); }
+              function fallbackCopy(t) {
+                var ta = document.createElement('textarea');
+                ta.value = t; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); copyBtn.textContent = '✓ Copied'; }
+                catch (e) { copyBtn.textContent = '✕ Copy failed — see console'; console.log(t); }
+                document.body.removeChild(ta);
+                setTimeout(function() { copyBtn.textContent = '📋 Copy results'; }, 1500);
+              }
+            });
+            copyRow.appendChild(copyBtn);
+            body.appendChild(copyRow);
+
             status.textContent = 'Done';
             startBtn.textContent = '↻ Run again';
             startBtn.style.opacity = '1';
@@ -2835,9 +2902,9 @@
           }, 1200);
           return;
         }
-        var p = positions[idx];
-        status.textContent = 'Tap ' + (idx + 1) + '/' + positions.length + ' → (' + p.px + ',' + p.py + ')';
-        firedAt = idx;
+        var p = run.positions[idx];
+        status.textContent = 'Tap ' + (idx + 1) + '/' + run.positions.length + ' → (' + p.px + ',' + p.py + ')';
+        run.firedAt = idx;
         idx++;
         fetch('/android/tap', {
           method: 'POST', headers: { 'content-type': 'application/json' },

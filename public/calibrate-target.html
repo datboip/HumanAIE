@@ -106,12 +106,25 @@
     $status.textContent = 'Cleared — tap anywhere · 0 total';
   });
 
-  // Ready beacon — tells the server we're loaded and listening. The
-  // orchestrator waits for this before firing taps so taps never land on
-  // whatever app was previously open. Beacon repeats every 2s for the
-  // first 10s in case the first POST loses a race with the orchestrator.
+  // Ready beacon — tells the server we're loaded and listening AND reports
+  // current viewport dims so the orchestrator can pick tap targets within
+  // the actually-visible page area (avoids firing into chrome at the top
+  // or nav-bar at the bottom).
   function sendReady() {
-    fetch('/calibrate-target/ready', { method: 'POST' }).catch(function() {});
+    var dpr = window.devicePixelRatio || 1;
+    fetch('/calibrate-target/ready', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        innerW: window.innerWidth, innerH: window.innerHeight,
+        screenW: window.screen.width || window.innerWidth,
+        screenH: window.screen.height || window.innerHeight,
+        dpr: dpr,
+        // CSS-px offset between top of device screen and top of page area.
+        // The orchestrator adds this (× dpr) to the bottom of its safe Y range.
+        topOffsetCssPx: Math.max(0, (window.screen.height || 0) - window.innerHeight),
+        leftOffsetCssPx: Math.max(0, (window.screen.width || 0) - window.innerWidth),
+      }),
+    }).catch(function() {});
   }
   sendReady();
   var readyTimer = setInterval(sendReady, 2000);
