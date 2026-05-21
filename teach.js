@@ -332,6 +332,11 @@ function promoteSessionToWorkflow(sessionId, { name }) {
     use_count: 0,
     success_count: 0,
     rejected_reason: null,
+    flagged: false,
+    flag_reason: null,
+    flagged_at: null,
+    parent: null,
+    edit_reason: null,
   };
   writeWorkflowJson(path.join(dir, 'workflow.json'), wf);
   return wf;
@@ -373,6 +378,11 @@ function proposeSessionAsWorkflow(sessionId, { name, intent }) {
     use_count: 0,
     success_count: 0,
     rejected_reason: null,
+    flagged: false,
+    flag_reason: null,
+    flagged_at: null,
+    parent: null,
+    edit_reason: null,
   };
   writeWorkflowJson(path.join(dir, 'workflow.json'), wf);
   return wf;

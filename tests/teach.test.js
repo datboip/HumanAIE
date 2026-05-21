@@ -835,3 +835,42 @@ test('readWorkflow defaults P3-era missing fields (flagged, parent, edit_reason,
   assert.strictEqual(wf.parent, null);
   assert.strictEqual(wf.edit_reason, null);
 });
+
+test('promoteSessionToWorkflow writes P4 fields with default values', () => {
+  const teachDir = tmpDir();
+  const wfDir = tmpDir();
+  teach.configure({ rootDir: teachDir });
+  teach.configureWorkflows({ rootDir: wfDir });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 },
+    screenshotBuffer: Buffer.alloc(200, 0xff),
+    metaArgs: { package: 'com.p4', activity: 'a' } });
+  const id = teach.getActive().id;
+  teach.endActive('done');
+  const wf = teach.promoteSessionToWorkflow(id, { name: 'P4 promote' });
+  assert.strictEqual(wf.flagged, false);
+  assert.strictEqual(wf.flag_reason, null);
+  assert.strictEqual(wf.flagged_at, null);
+  assert.strictEqual(wf.parent, null);
+  assert.strictEqual(wf.edit_reason, null);
+  // Round-trip from disk
+  const loaded = teach.readWorkflow(wf.id);
+  assert.strictEqual(loaded.flagged, false);
+  assert.strictEqual(loaded.parent, null);
+});
+
+test('proposeSessionAsWorkflow writes P4 fields with default values', () => {
+  const teachDir = tmpDir();
+  const wfDir = tmpDir();
+  teach.configure({ rootDir: teachDir });
+  teach.configureWorkflows({ rootDir: wfDir });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+  teach.captureStep({ action: 'tap', args: { x: 1, y: 2 },
+    screenshotBuffer: Buffer.alloc(200, 0xff),
+    metaArgs: { package: 'com.p4', activity: 'a' } });
+  const id = teach.getActive().id;
+  teach.endActive('done');
+  const wf = teach.proposeSessionAsWorkflow(id, { name: 'P4 propose', intent: 'p4' });
+  assert.strictEqual(wf.flagged, false);
+  assert.strictEqual(wf.parent, null);
+});
