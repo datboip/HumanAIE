@@ -1793,13 +1793,15 @@
     ]).then(function(results) {
       var allSessions = results[0] || [];
       var allWorkflows = results[1] || [];
-      // Partition by capture kind. Today every captured item has a non-empty
-      // `package` (Android only), so all data lives in the Phone bucket.
-      // When web capture lands, those rows will have no package and surface
-      // under the Web sub-tab without any other plumbing change.
-      var isPhone = function(x) { return !!(x && x.package); };
-      var sessions  = flowsSubtab === 'phone' ? allSessions.filter(isPhone)  : allSessions.filter(function(x) { return !isPhone(x); });
-      var workflows = flowsSubtab === 'phone' ? allWorkflows.filter(isPhone) : allWorkflows.filter(function(x) { return !isPhone(x); });
+      // Partition by capture kind. Positive web marker is the presence of a
+      // `url` field (which only future web capture will set). Anything without
+      // a URL — including P1-era phone rows that never recorded a package —
+      // counts as Phone. This avoids miscategorising legacy captures with
+      // empty package strings while staying forward-compatible with the
+      // upcoming web recorder.
+      var isWeb = function(x) { return !!(x && x.url); };
+      var sessions  = flowsSubtab === 'web' ? allSessions.filter(isWeb)  : allSessions.filter(function(x) { return !isWeb(x); });
+      var workflows = flowsSubtab === 'web' ? allWorkflows.filter(isWeb) : allWorkflows.filter(function(x) { return !isWeb(x); });
 
       // Clear and rebuild via DOM API (no innerHTML — keeps user-controlled
       // strings safely text-only).
