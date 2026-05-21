@@ -309,10 +309,12 @@ function writeWorkflowJson(wfPath, wf) {
 }
 
 function deleteWorkflow(id) {
-  const wf = readWorkflow(id);
-  if (!wf) return false;
-  const dir = workflowDir(wf.package, wf.activity, slugify(wf.name));
-  try { fs.rmSync(dir, { recursive: true, force: true }); return true; } catch { return false; }
+  // Use workflowPathById so proposed-edit dirs (named <parent-slug>-edit-<ts>)
+  // resolve correctly — slugify(wf.name) was reconstructing 'q-edit' instead
+  // of the real timestamped slug and silently no-op'ing the delete.
+  const wfPath = workflowPathById(id);
+  if (!wfPath) return false;
+  try { fs.rmSync(path.dirname(wfPath), { recursive: true, force: true }); return true; } catch { return false; }
 }
 
 function promoteSessionToWorkflow(sessionId, { name }) {
