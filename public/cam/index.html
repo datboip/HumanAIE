@@ -1792,7 +1792,7 @@
       var grid = document.createElement('div');
       grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px';
       grid.appendChild(buildLandingColumn('Recent attempts (click any → review + save as flow)', sessions, renderSessionRow));
-      grid.appendChild(buildLandingColumn('Approved flows (AI references these on repeat tasks)', workflows, renderWorkflowRow));
+      grid.appendChild(buildWorkflowsColumn(workflows));
       landing.appendChild(grid);
     });
   }
@@ -1860,6 +1860,123 @@
     meta.textContent = (w.package || '—') + ' · ' + stepCount + ' steps · used ' + (w.use_count || 0) + '×';
     row.appendChild(meta);
     return row;
+  }
+
+  function buildWorkflowsColumn(workflows) {
+    var col = document.createElement('div');
+    var approved = workflows.filter(function(w) { return w.status === 'approved'; });
+    var proposed = workflows.filter(function(w) { return w.status === 'proposed'; });
+    var rejected = workflows.filter(function(w) { return w.status === 'rejected'; });
+
+    col.appendChild(buildSubSection('✅ Approved flows (AI references these on repeat tasks)', approved, renderWorkflowRow, false));
+    col.appendChild(buildSubSection('🟡 Proposed (review)', proposed, renderProposedRow, false));
+    col.appendChild(buildSubSection('🗑 Rejected', rejected, renderRejectedRow, true));  // collapsed by default
+
+    return col;
+  }
+
+  function buildSubSection(title, items, rowBuilder, collapsedByDefault) {
+    var sec = document.createElement('div');
+    sec.style.cssText = 'margin-bottom:12px';
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #2a2a2a;padding-bottom:3px;cursor:pointer;user-select:none';
+    var body = document.createElement('div');
+    body.style.display = collapsedByDefault ? 'none' : 'block';
+    var caret = collapsedByDefault ? '▶' : '▼';
+    hdr.textContent = caret + ' ' + title + ' (' + items.length + ')';
+    hdr.addEventListener('click', function() {
+      var shown = body.style.display !== 'none';
+      body.style.display = shown ? 'none' : 'block';
+      hdr.textContent = (shown ? '▶' : '▼') + ' ' + title + ' (' + items.length + ')';
+    });
+    sec.appendChild(hdr);
+    if (items.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:#666;font-size:11px;font-style:italic;padding:4px 0';
+      empty.textContent = '(none)';
+      body.appendChild(empty);
+    } else {
+      items.forEach(function(item) { body.appendChild(rowBuilder(item)); });
+    }
+    sec.appendChild(body);
+    return sec;
+  }
+
+  function renderProposedRow(w) {
+    var row = document.createElement('div');
+    row.className = 'teach-workflow-row';
+    row.style.cssText = 'background:#0a0a0a;border:1px solid #2a2a2a;border-left:3px solid #cccc55;border-radius:4px;padding:8px;margin-bottom:6px;display:flex;align-items:center;gap:6px';
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;cursor:pointer';
+    info.addEventListener('click', function() { openTeachEditor(w.id, 'workflow'); });
+    var name = document.createElement('div');
+    name.style.cssText = 'font-size:12px;color:#cccc55;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    name.textContent = w.name;
+    info.appendChild(name);
+    var meta = document.createElement('div');
+    meta.style.cssText = 'font-size:10px;color:#666;margin-top:2px';
+    var stepCount = (w.steps && w.steps.length) || 0;
+    meta.textContent = (w.package || '—') + ' · ' + stepCount + ' steps · ' + (w.source_kind || '');
+    info.appendChild(meta);
+    row.appendChild(info);
+    var approveBtn = document.createElement('button');
+    approveBtn.className = 'nav-btn';
+    approveBtn.style.cssText = 'background:#0a3a18;color:#3ddc84;border:1px solid #3ddc84;padding:2px 6px;font-size:10px;cursor:pointer';
+    approveBtn.textContent = '✓';
+    approveBtn.title = 'Approve';
+    approveBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      approveWorkflow(w.id);
+    });
+    row.appendChild(approveBtn);
+    var rejectBtn = document.createElement('button');
+    rejectBtn.className = 'nav-btn';
+    rejectBtn.style.cssText = 'background:#3a1818;color:#ff6666;border:1px solid #d80000;padding:2px 6px;font-size:10px;cursor:pointer';
+    rejectBtn.textContent = '✕';
+    rejectBtn.title = 'Reject';
+    rejectBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      rejectWorkflow(w.id);
+    });
+    row.appendChild(rejectBtn);
+    return row;
+  }
+
+  function renderRejectedRow(w) {
+    var row = document.createElement('div');
+    row.className = 'teach-workflow-row';
+    row.style.cssText = 'background:#0a0a0a;border:1px solid #2a2a2a;border-left:3px solid #666;border-radius:4px;padding:8px;margin-bottom:6px;display:flex;align-items:center;gap:6px;opacity:0.6';
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0';
+    var name = document.createElement('div');
+    name.style.cssText = 'font-size:12px;color:#888;text-decoration:line-through;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    name.textContent = w.name;
+    info.appendChild(name);
+    if (w.rejected_reason) {
+      var reason = document.createElement('div');
+      reason.style.cssText = 'font-size:10px;color:#888;margin-top:2px;font-style:italic';
+      reason.textContent = '"' + w.rejected_reason + '"';
+      info.appendChild(reason);
+    }
+    row.appendChild(info);
+    var unBtn = document.createElement('button');
+    unBtn.className = 'nav-btn';
+    unBtn.style.cssText = 'background:transparent;color:#888;border:1px solid #444;padding:2px 6px;font-size:10px;cursor:pointer';
+    unBtn.textContent = '↻ Un-reject';
+    unBtn.title = 'Re-propose for review';
+    unBtn.addEventListener('click', function() { unrejectWorkflow(w.id); });
+    row.appendChild(unBtn);
+    return row;
+  }
+
+  function approveWorkflow(id) {
+    console.log('approveWorkflow stub', id);
+  }
+  function rejectWorkflow(id) {
+    console.log('rejectWorkflow stub', id);
+  }
+  function unrejectWorkflow(id) {
+    console.log('unrejectWorkflow stub', id);
   }
 
   function openTeachEditor(id, type) {
