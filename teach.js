@@ -187,6 +187,20 @@ function captureStep({ action, args, screenshotBuffer = null, metaArgs = null, r
 function endActive(reason) {
   if (!activeSession || activeSession.ended_at !== null) return null;
   finalizeSession(activeSession, { end_reason: reason });
+  // If this session was a replay, increment the source workflow's success
+  // counter on a 'done' finish (any other end_reason = the replay didn't
+  // complete cleanly, don't credit it).
+  if (reason === 'done' && activeSession.replay_of && workflowsRoot) {
+    try {
+      const wf = readWorkflow(activeSession.replay_of);
+      if (wf) {
+        wf.success_count = (wf.success_count || 0) + 1;
+        wf.updated_at = Date.now();
+        const wfPath = workflowPathById(wf.id);
+        if (wfPath) writeWorkflowJson(wfPath, wf);
+      }
+    } catch {}
+  }
   if (teachRoot) writeSessionMeta(teachRoot, activeSession);
   clearIdleTimer();
   const finished = activeSession;

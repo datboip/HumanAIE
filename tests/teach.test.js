@@ -771,3 +771,42 @@ test('captureStep records replay_of on the session', () => {
 
   teach.endActive('test-cleanup');
 });
+
+test('endActive(done) bumps source workflow success_count when replay_of is set', () => {
+  const teachDir = tmpDir();
+  const wfDir = tmpDir();
+  teach.configure({ rootDir: teachDir });
+  teach.configureWorkflows({ rootDir: wfDir });
+  if (teach.getActive()) teach.endActive('test-cleanup');
+
+  // Seed a workflow on disk
+  const dir = path.join(wfDir, 'com-foo', 'a', 'src');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-src', name: 'src', intent: 'src', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.foo', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 's', use_count: 0, success_count: 0, rejected_reason: null,
+  }));
+
+  // Start a replay session and end it with 'done'
+  teach.captureStep({
+    action: 'tap', args: { x: 1, y: 2 },
+    metaArgs: { package: 'com.foo', activity: 'a' },
+    replay_of: 'wf-src',
+  });
+  teach.endActive('done');
+
+  const wf = teach.readWorkflow('wf-src');
+  assert.strictEqual(wf.success_count, 1);
+
+  // Stuck end should NOT increment
+  teach.captureStep({
+    action: 'tap', args: { x: 1, y: 2 },
+    metaArgs: { package: 'com.foo', activity: 'a' },
+    replay_of: 'wf-src',
+  });
+  teach.endActive('stuck');
+  const wf2 = teach.readWorkflow('wf-src');
+  assert.strictEqual(wf2.success_count, 1);
+});
