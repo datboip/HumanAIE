@@ -8,6 +8,17 @@
   #canvas { position: fixed; inset: 0; touch-action: none; }
   .dot { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #3ddc84; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.7); pointer-events: none; }
   .label { position: absolute; font-size: 11px; color: #3ddc84; text-shadow: 0 0 2px #000; pointer-events: none; padding: 2px 5px; background: rgba(0,0,0,0.65); border-radius: 3px; }
+  /* Aim Trainer targets */
+  .aim-target { position: absolute; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; border: 3px solid #ff3366; background: rgba(255,51,102,0.10); display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; color: #ff3366; text-shadow: 0 0 4px rgba(0,0,0,0.9); pointer-events: none; box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 8px rgba(255,51,102,0.4); transition: transform 0.1s ease-out; }
+  .aim-target.active { border-color: #ffcc00; color: #ffcc00; box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 0 16px rgba(255,204,0,0.7); transform: scale(1.1); }
+  .aim-target.hit { border-color: #3ddc84; color: #3ddc84; background: rgba(61,220,132,0.20); }
+  .aim-target::before { content: ''; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: currentColor; }
+  .aim-flash-miss { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: rgba(216,0,0,0.55); pointer-events: none; animation: aimFlashFade 0.5s ease-out forwards; }
+  @keyframes aimFlashFade { from { opacity: 0.9; transform: scale(0.7); } to { opacity: 0; transform: scale(1.6); } }
+  #aim-hud { position: fixed; left: 0; right: 0; top: 56px; display: none; justify-content: center; pointer-events: none; }
+  #aim-hud .panel { background: rgba(0,0,0,0.85); border: 1px solid #ff3366; padding: 6px 14px; border-radius: 6px; font-size: 12px; color: #fff; pointer-events: auto; display: flex; gap: 14px; align-items: center; }
+  #aim-hud .panel .timer { color: #ffcc00; font-weight: bold; }
+  #aim-hud .panel .score { color: #3ddc84; font-weight: bold; }
   #hud { position: fixed; left: 8px; top: 8px; right: 8px; display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; pointer-events: none; }
   #hud .left, #hud .right { background: rgba(0,0,0,0.72); padding: 6px 10px; border-radius: 4px; font-size: 12px; pointer-events: auto; }
   #hud .right { display: flex; gap: 6px; }
@@ -16,9 +27,11 @@
 </style>
 </head><body>
   <div id="canvas"></div>
+  <div id="aim-hud"><div class="panel"><span>🎯 Aim Trainer</span><span id="aim-progress">0/0</span><span class="timer" id="aim-timer">0.00s</span><span class="score" id="aim-score"></span><button id="aim-stop" style="background:#444;color:#fff;border:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:11px;font-family:inherit">Stop</button></div></div>
   <div id="hud">
     <div class="left"><span id="status">Tap anywhere — dots will appear · 0 total</span></div>
     <div class="right">
+      <button id="aim-btn" style="background:#cc3366">🎯 Aim Trainer</button>
       <button id="fs-btn">⛶ Fullscreen</button>
       <button id="clear-btn">Clear</button>
     </div>
@@ -47,6 +60,10 @@
     if (e.cancelable) e.preventDefault();
     var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
     var cx = t.clientX, cy = t.clientY;
+    // In aim-trainer mode, route taps through the trainer first so they
+    // count as hits/misses. We still POST the report so the server can see
+    // the underlying touch data either way.
+    if (aim && !aim.finished) aimHandleTap(cx, cy);
     var dpr = window.devicePixelRatio || 1;
     // The page rarely starts at y=0 — Android's status bar still steals
     // ~30-40 CSS px at the top even after requestFullscreen on most Chrome
@@ -105,6 +122,120 @@
     n = 0;
     $status.textContent = 'Cleared — tap anywhere · 0 total';
   });
+
+  // ─── Aim Trainer ──────────────────────────────────────────────────────────
+  // Spawns N numbered bullseye rings at random non-overlapping positions
+  // inside the visible page area. Tap them in numerical order. Wrong target
+  // = miss + red flash; correct = hit (turns green, stays). Score reports
+  // total time, accuracy %, avg time per hit, and per-target drift (the
+  // pixel distance between the bullseye center and where you actually
+  // tapped — same drift metric as the calibration runs).
+  var aim = null;
+  function startAimTrainer() {
+    if (aim) return;
+    while ($canvas.firstChild) $canvas.removeChild($canvas.firstChild);
+    n = 0;
+    var W = window.innerWidth, H = window.innerHeight;
+    var margin = 50, minSep = 90;
+    var N = 8;
+    var positions = [];
+    var tries = 0;
+    while (positions.length < N && tries < 400) {
+      tries++;
+      var x = margin + Math.random() * (W - 2 * margin);
+      var y = margin + Math.random() * (H - 2 * margin);
+      var ok = true;
+      for (var i = 0; i < positions.length; i++) {
+        if (Math.hypot(positions[i].x - x, positions[i].y - y) < minSep) { ok = false; break; }
+      }
+      if (ok) positions.push({ x: x, y: y });
+    }
+    aim = { N: positions.length, positions: positions, nextIdx: 0, hits: [], misses: 0, startTime: 0, els: [] };
+
+    positions.forEach(function(p, idx) {
+      var t = document.createElement('div');
+      t.className = 'aim-target';
+      t.style.left = p.x + 'px';
+      t.style.top  = p.y + 'px';
+      t.textContent = String(idx + 1);
+      $canvas.appendChild(t);
+      aim.els.push(t);
+    });
+    aim.els[0].classList.add('active');
+
+    document.getElementById('aim-hud').style.display = 'flex';
+    document.getElementById('aim-progress').textContent = '0/' + aim.N;
+    document.getElementById('aim-timer').textContent = '0.00s';
+    document.getElementById('aim-score').textContent = '';
+    $status.textContent = 'Aim Trainer — tap targets 1 → ' + aim.N + ' in order';
+    aim.timerInterval = setInterval(function() {
+      if (aim && aim.startTime) {
+        document.getElementById('aim-timer').textContent = ((Date.now() - aim.startTime) / 1000).toFixed(2) + 's';
+      }
+    }, 30);
+  }
+  function stopAimTrainer() {
+    if (!aim) return;
+    clearInterval(aim.timerInterval);
+    aim.els.forEach(function(el) { try { el.remove(); } catch {} });
+    document.getElementById('aim-hud').style.display = 'none';
+    aim = null;
+    $status.textContent = 'Aim Trainer stopped';
+  }
+  function aimHandleTap(cx, cy) {
+    if (!aim) return false;
+    if (!aim.startTime) aim.startTime = Date.now();
+    var next = aim.positions[aim.nextIdx];
+    var dist = Math.hypot(cx - next.x, cy - next.y);
+    var hitRadius = 30;  // target ring is 60px wide → 30px radius
+    if (dist <= hitRadius) {
+      aim.hits.push({ idx: aim.nextIdx, dist: dist, t: Date.now() - aim.startTime });
+      var el = aim.els[aim.nextIdx];
+      el.classList.remove('active'); el.classList.add('hit');
+      el.textContent = '✓';
+      aim.nextIdx++;
+      document.getElementById('aim-progress').textContent = aim.nextIdx + '/' + aim.N;
+      if (aim.nextIdx >= aim.N) finishAim();
+      else aim.els[aim.nextIdx].classList.add('active');
+    } else {
+      aim.misses++;
+      var flash = document.createElement('div');
+      flash.className = 'aim-flash-miss';
+      flash.style.left = cx + 'px';
+      flash.style.top  = cy + 'px';
+      $canvas.appendChild(flash);
+      setTimeout(function() { try { flash.remove(); } catch {} }, 500);
+    }
+    return true;  // consumed
+  }
+  function finishAim() {
+    clearInterval(aim.timerInterval);
+    var totalTime = (Date.now() - aim.startTime) / 1000;
+    var avgDrift = aim.hits.reduce(function(s, h) { return s + h.dist; }, 0) / aim.hits.length;
+    var attempts = aim.hits.length + aim.misses;
+    var acc = (aim.hits.length / attempts * 100).toFixed(1);
+    var avgPerHit = (totalTime / aim.N).toFixed(2);
+    document.getElementById('aim-timer').textContent = totalTime.toFixed(2) + 's';
+    document.getElementById('aim-score').textContent = '· ' + acc + '% acc · ' + avgPerHit + 's/hit · drift ' + avgDrift.toFixed(1) + 'px';
+    $status.textContent = '🎯 Done — ' + aim.N + ' hits, ' + aim.misses + ' misses, ' + totalTime.toFixed(2) + 's, drift ' + avgDrift.toFixed(1) + 'px';
+    // POST a summary so cam UI / AI can read results.
+    var dpr = window.devicePixelRatio || 1;
+    fetch('/calibrate-target/aim-result', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        N: aim.N, hits: aim.hits.length, misses: aim.misses,
+        totalSeconds: totalTime, avgDriftCssPx: avgDrift,
+        avgDriftPhonePx: avgDrift * dpr,
+        details: aim.hits.map(function(h, i) {
+          return { idx: h.idx + 1, drift_css_px: h.dist, drift_phone_px: h.dist * dpr, t_ms: h.t };
+        }),
+        t: Date.now(),
+      }),
+    }).catch(function() {});
+    aim.finished = true;
+  }
+  document.getElementById('aim-btn').addEventListener('click', startAimTrainer);
+  document.getElementById('aim-stop').addEventListener('click', stopAimTrainer);
 
   // Ready beacon — tells the server we're loaded and listening AND reports
   // current viewport dims so the orchestrator can pick tap targets within

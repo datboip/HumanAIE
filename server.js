@@ -237,6 +237,25 @@ app.get('/calibrate-target/clear-tick', (req, res) => {
   res.json({ tick: calibClearTick });
 });
 
+// Aim trainer results — the calibration page POSTs here when a trainer
+// session finishes. Stored as the most-recent result; broadcast via SSE
+// so the cam UI (or an AI watching /events) can react.
+let calibAimResult = null;
+app.post('/calibrate-target/aim-result', (req, res) => {
+  calibAimResult = req.body || null;
+  try {
+    if (calibAimResult) {
+      pushAction('AimTrainer',
+        `${calibAimResult.hits}/${calibAimResult.N} in ${(calibAimResult.totalSeconds || 0).toFixed(2)}s · drift ${(calibAimResult.avgDriftPhonePx || 0).toFixed(1)}px`,
+        'ok', { aim: calibAimResult });
+    }
+  } catch {}
+  res.json({ ok: true });
+});
+app.get('/calibrate-target/aim-result', (req, res) => {
+  res.json({ result: calibAimResult });
+});
+
 // One-shot calibration orchestrator. AI agents call this to verify click
 // accuracy before driving the phone. Opens the target page on the phone,
 // fires 9 taps at known coords, waits for reports, returns drift summary.
