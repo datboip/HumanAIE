@@ -111,9 +111,25 @@ if (!ADB_AVAILABLE) {
   const BOUNDARY = 'frame';
 
   let lastFrameTime = 0;
+  // Sliding-window FPS counter. Keeps timestamps from the last 2 seconds
+  // and reports count/elapsed so the cam UI side panel can render a live
+  // number — drops to 5-ish during screencap fallback, 20+ on healthy h264.
+  let frameTimestamps = [];
+  function recordFrameForFps(t) {
+    frameTimestamps.push(t);
+    const cutoff = t - 2000;
+    while (frameTimestamps.length && frameTimestamps[0] < cutoff) frameTimestamps.shift();
+  }
+  function currentFps() {
+    if (frameTimestamps.length < 2) return 0;
+    const span = (frameTimestamps[frameTimestamps.length - 1] - frameTimestamps[0]) / 1000;
+    if (span <= 0) return 0;
+    return Math.round((frameTimestamps.length - 1) / span);
+  }
   function pushFrame(buf) {
     if (!buf || buf.length < 1000) return;
     lastFrameTime = Date.now();
+    recordFrameForFps(lastFrameTime);
     frameCache = buf;
     const header = `--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${buf.length}\r\n\r\n`;
     for (const client of MJPEG_CLIENTS) {
@@ -140,6 +156,8 @@ if (!ADB_AVAILABLE) {
   let h264LastFrameAt = 0;
   let h264FailedStarts = 0;
   let h264DisabledUntil = 0;
+  let h264BackoffCount = 0;   // resets when h264 produces a frame
+  let h264Wedged = false;     // true after 3 consecutive backoff cycles
   function killH264ProcessGroup() {
     if (!h264ShellProc) return;
     const pid = h264ShellProc.pid;
@@ -182,6 +200,11 @@ if (!ADB_AVAILABLE) {
           h264LastFrameAt = Date.now();
           gotFrames = true;
           h264FailedStarts = 0; // reset on healthy frame
+          if (h264BackoffCount > 0 || h264Wedged) {
+            h264BackoffCount = 0;
+            h264Wedged = false;
+            try { broadcaster('ScreenrecordRecovered', 'h264 stream healthy again', 'ok', { wedged: false }); } catch {}
+          }
           pushFrame(frameBuf.slice(start, i + 2));
           frameBuf = frameBuf.slice(i + 2);
           start = -1;
@@ -200,8 +223,18 @@ if (!ADB_AVAILABLE) {
           // h264-stream cleanly. Back off for 5 minutes — screencap fallback
           // serves frames meanwhile. Try again later in case state changed.
           h264DisabledUntil = Date.now() + 5 * 60 * 1000;
-          console.log('[android] h264 producing no frames after 3 tries; backing off 5 min, screencap fallback only');
+          h264BackoffCount++;
+          console.log(`[android] h264 producing no frames after 3 tries; backing off 5 min (cycle ${h264BackoffCount}), screencap fallback only`);
           h264FailedStarts = 0;
+          // Escalation: 3 consecutive backoff cycles (~15 min wedged) means
+          // the phone's MediaCodec is stuck — only a phone reboot recovers.
+          // Mark wedged + broadcast so the cam UI can surface the option.
+          if (h264BackoffCount === 3) {
+            h264Wedged = true;
+            try { broadcaster('ScreenrecordWedged',
+              `${h264BackoffCount} consecutive backoff cycles (~15 min) — phone reboot likely required`,
+              'warn', { wedged: true, cycles: h264BackoffCount }); } catch {}
+          }
           return;
         }
       }
@@ -496,7 +529,21 @@ if (!ADB_AVAILABLE) {
       screen_h,
       package: foreground.package,
       activity: foreground.activity,
+      screenrecord_wedged: h264Wedged,
+      screenrecord_backoff_cycles: h264BackoffCount,
+      fps: currentFps(),
     });
+  });
+
+  // Reboot the phone. Used by the cam UI's reboot button and (auto-suggested)
+  // when /status shows screenrecord_wedged after the watchdog escalation.
+  // Phone is offline for ~30-45 seconds during boot; the existing reconnect
+  // loop picks it back up.
+  router.post('/reboot', async (req, res) => {
+    try {
+      await adbAsync('reboot');
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   router.get('/ui-dump', async (req, res) => {

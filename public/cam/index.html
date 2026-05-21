@@ -1060,6 +1060,10 @@
 
     <!-- Handroid left side panel — flanks the phone stream with hardware-like nav buttons. -->
     <div id="android-side-left">
+      <button class="nav-btn ac-side-btn" id="ac-unlock" title="Wake + dismiss lockscreen" onclick="unlockPhone(event)">🔓</button>
+      <button class="nav-btn ac-side-btn" id="ac-reboot" title="Reboot phone (click twice)" onclick="rebootPhone(event)">♻️</button>
+      <div id="ac-fps" title="Phone stream FPS — drops to ~5 on screencap fallback, 20+ on healthy h264" style="font-family:'Courier New',monospace;font-size:10px;color:#888;text-align:center;padding:2px 0;width:100%;margin-top:4px">— fps</div>
+      <div style="height:6px"></div>
       <button class="nav-btn ac-side-btn" id="ac-back" title="Back">&#9664;</button>
       <button class="nav-btn ac-side-btn" id="ac-home" title="Home">&#9634;</button>
       <button class="nav-btn ac-side-btn" id="ac-recent" title="Recent apps">&#9776;</button>
@@ -2930,6 +2934,54 @@
     }).catch(function(e) { console.warn('setPhoneFps failed', e); });
   };
 
+  // Wake + dismiss-keyguard (=/android/wake). One click is enough — server
+  // does WAKEUP then waits 250ms then `wm dismiss-keyguard`. On a PIN/face
+  // locked phone this surfaces the entry screen; on a no-security phone it
+  // drops straight to the home screen.
+  window.unlockPhone = function(e) {
+    if (e) e.stopPropagation();
+    fetch('/android/wake', { method: 'POST', headers: { 'content-type': 'application/json' } })
+      .then(function() { if (typeof refreshAndroidStatus === 'function') refreshAndroidStatus(); })
+      .catch(function(err) { console.warn('unlock failed', err); });
+  };
+
+  // Reboot phone — two-click safety. First click changes the button to a
+  // 3-second confirm state; second click within that window actually fires
+  // /android/reboot. Phone is offline ~30-45s; server's reconnect loop
+  // picks it back up automatically. Visible label briefly flashes the
+  // confirm prompt so the action is never silent.
+  var rebootArmed = false;
+  var rebootArmedTimer = null;
+  window.rebootPhone = function(e) {
+    if (e) e.stopPropagation();
+    var btn = document.getElementById('ac-reboot');
+    if (!rebootArmed) {
+      rebootArmed = true;
+      if (btn) { btn.textContent = '⚠'; btn.title = 'Click again within 3s to reboot'; btn.style.background = '#3a1818'; btn.style.color = '#ff6666'; }
+      rebootArmedTimer = setTimeout(function() {
+        rebootArmed = false;
+        if (btn) { btn.textContent = '♻️'; btn.title = 'Reboot phone (click twice)'; btn.style.background = ''; btn.style.color = ''; }
+      }, 3000);
+      return;
+    }
+    clearTimeout(rebootArmedTimer); rebootArmed = false;
+    if (btn) { btn.textContent = '…'; btn.title = 'Rebooting...'; btn.style.background = ''; btn.style.color = ''; }
+    fetch('/android/reboot', { method: 'POST', headers: { 'content-type': 'application/json' } })
+      .then(function(r) { return r.json(); }).then(function(d) {
+        if (d.error) {
+          if (btn) { btn.textContent = '✕'; btn.title = 'Reboot failed: ' + d.error; }
+          setTimeout(function() { if (btn) { btn.textContent = '♻️'; btn.title = 'Reboot phone (click twice)'; } }, 4000);
+        } else {
+          if (btn) { btn.textContent = '⏳'; btn.title = 'Rebooting — phone offline ~30s'; }
+          setTimeout(function() {
+            if (btn) { btn.textContent = '♻️'; btn.title = 'Reboot phone (click twice)'; }
+          }, 45000);
+        }
+      }).catch(function() {
+        if (btn) { btn.textContent = '♻️'; btn.title = 'Reboot phone (click twice)'; }
+      });
+  };
+
   window.reconnectPhone = function() {
     // Re-runs adb connect on the configured PHONE_IP. Also refreshes status.
     fetch('/android/reconnect', { method: 'POST' })
@@ -3002,12 +3054,53 @@
       }
     }
 
-    // Phone-asleep banner toggle. Show only when phone is connected AND screen is off
-    // (when phone disconnected, the existing NO-PHONE splash takes over).
+    // Phone-asleep banner is intentionally disabled (see note above).
     var sleepBanner = document.getElementById('phone-sleep-banner');
-    if (sleepBanner) {
-      var shouldShowSleep = androidMode && androidStatus.phone_connected && androidStatus.screen_on === false;
-      sleepBanner.classList.toggle('shown', shouldShowSleep);
+    if (sleepBanner) sleepBanner.classList.remove('shown');
+
+    // Side-panel FPS readout — colored by health.
+    var fpsEl = document.getElementById('ac-fps');
+    if (fpsEl) {
+      var fps = androidStatus && typeof androidStatus.fps === 'number' ? androidStatus.fps : null;
+      if (fps === null) { fpsEl.textContent = '— fps'; fpsEl.style.color = '#888'; }
+      else if (fps >= 15) { fpsEl.textContent = fps + ' fps'; fpsEl.style.color = '#3ddc84'; }
+      else if (fps >= 4)  { fpsEl.textContent = fps + ' fps'; fpsEl.style.color = '#cccc55'; }
+      else                { fpsEl.textContent = fps + ' fps'; fpsEl.style.color = '#d80000'; }
+    }
+
+    // Wedged warning — surface a one-click reboot when screenrecord has
+    // been stuck for ~15+ minutes (3 consecutive backoff cycles, see
+    // android.js watchdog). Server marks androidStatus.screenrecord_wedged
+    // via /android/status; we render a banner above the viewport.
+    var warnEl = document.getElementById('wedged-banner');
+    if (androidStatus && androidStatus.screenrecord_wedged) {
+      if (!warnEl) {
+        warnEl = document.createElement('div');
+        warnEl.id = 'wedged-banner';
+        warnEl.style.cssText = 'position:absolute;left:50%;top:8px;transform:translateX(-50%);background:#3a1818;border:1px solid #d80000;color:#ff9999;padding:8px 14px;border-radius:4px;font-size:12px;z-index:60;display:flex;gap:10px;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,0.7)';
+        var msg = document.createElement('span');
+        msg.textContent = '⚠ Phone screenrecord is wedged (' + (androidStatus.screenrecord_backoff_cycles || 0) + ' cycles). Stream stuck on screencap fallback. Phone reboot fixes it.';
+        warnEl.appendChild(msg);
+        var fixBtn = document.createElement('button');
+        fixBtn.style.cssText = 'background:#d80000;color:#fff;border:none;padding:4px 10px;border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer;font-weight:bold';
+        fixBtn.textContent = 'Reboot phone';
+        fixBtn.addEventListener('click', function() {
+          // Bypass the two-click safety since the banner itself is the confirmation.
+          fetch('/android/reboot', { method: 'POST', headers: { 'content-type': 'application/json' } })
+            .catch(function() {});
+          warnEl.remove();
+        });
+        warnEl.appendChild(fixBtn);
+        var dismiss = document.createElement('span');
+        dismiss.textContent = '✕';
+        dismiss.style.cssText = 'cursor:pointer;color:#999;font-weight:bold;padding:0 4px';
+        dismiss.addEventListener('click', function() { warnEl.remove(); });
+        warnEl.appendChild(dismiss);
+        var wrap = document.getElementById('viewport-wrapper');
+        if (wrap) wrap.appendChild(warnEl);
+      }
+    } else if (warnEl) {
+      warnEl.remove();
     }
 
     var txt = document.getElementById('android-status-text');
@@ -4013,10 +4106,27 @@
       state.showHumanHistory = !state.showHumanHistory;
       var btn = document.getElementById('ac-show-human');
       if (btn) btn.classList.toggle('active', state.showHumanHistory);
+      // Wipe any lingering human ghost trail / dot when turning off.
+      if (!state.showHumanHistory) {
+        document.querySelectorAll('.human-ghost-trail, .human-ghost-dot').forEach(function(el) { el.remove(); });
+        // Also hide the persistent cursor if it's currently in human-source state.
+        if ($aiCursor && $aiCursor.classList.contains('human')) $aiCursor.style.display = 'none';
+      } else if ($aiCursor && $aiCursor.classList.contains('human')) {
+        $aiCursor.style.display = '';
+      }
     } else if (which === 'ai') {
       state.showAiHistory = !state.showAiHistory;
       var btn2 = document.getElementById('ac-show-ai');
       if (btn2) btn2.classList.toggle('active', state.showAiHistory);
+      // Wipe any lingering AI trail / dot when turning off. Includes the
+      // persistent #ai-cursor (the "last AI click" indicator that was
+      // surviving toggle-off).
+      if (!state.showAiHistory) {
+        document.querySelectorAll('.ai-trail, .ai-dot, .ai-swipe-trail').forEach(function(el) { el.remove(); });
+        if ($aiCursor && !$aiCursor.classList.contains('human')) $aiCursor.style.display = 'none';
+      } else if ($aiCursor && !$aiCursor.classList.contains('human')) {
+        $aiCursor.style.display = '';
+      }
     }
   };
 
@@ -4062,6 +4172,14 @@
     if (state.splashVisible) return;
     if (state.interactionMode === 'highlight') return; // highlights handled via the simple-click branch below
     if (state.calibratingClicks) return; // calibration owns clicks while it's active
+    // Screen-off → first tap wakes + dismisses keyguard (no banner, no dialog).
+    // The tap is consumed; user's next tap goes through normally.
+    if (androidMode && androidStatus && androidStatus.phone_connected && androidStatus.screen_on === false) {
+      fetch('/android/wake', { method: 'POST', headers: { 'content-type': 'application/json' } })
+        .catch(function() {});
+      if (typeof refreshAndroidStatus === 'function') setTimeout(refreshAndroidStatus, 400);
+      return;
+    }
     $viewport.setPointerCapture(e.pointerId);
     var coords = screenToVirtual(e);
     if (!coords) return;
