@@ -970,3 +970,97 @@ test('POST /workflows/:id/flag sets the flag; /unflag clears it', async (t) => {
   assert.strictEqual(unflagBody.workflow.flagged, false);
   assert.strictEqual(unflagBody.workflow.flag_reason, null);
 });
+
+test('proposeWorkflowEdit creates sibling with proposed-edit status + parent ref', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  const dir = path.join(wfDir, 'com-test', 'a', 'orig');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-orig', name: 'orig', intent: 'orig', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [{ index: 0, action: 'tap', args: { x: 1, y: 2 } }],
+    created_at: 1000, updated_at: 1000, source: 's', use_count: 0, success_count: 0,
+    rejected_reason: null,
+  }));
+  const editedSteps = [{ index: 0, action: 'tap', args: { x: 99, y: 88 } }];
+  const edit = teach.proposeWorkflowEdit('wf-orig', editedSteps, 'tap moved');
+  assert.strictEqual(edit.status, 'proposed-edit');
+  assert.strictEqual(edit.source_kind, 'agent-edit');
+  assert.strictEqual(edit.parent, 'wf-orig');
+  assert.strictEqual(edit.edit_reason, 'tap moved');
+  assert.deepStrictEqual(edit.steps, editedSteps);
+  // Parent untouched
+  const parent = teach.readWorkflow('wf-orig');
+  assert.deepStrictEqual(parent.steps[0].args, { x: 1, y: 2 });
+});
+
+test('proposeWorkflowEdit throws "pending edit exists" when one already pending', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  const dir = path.join(wfDir, 'com-test', 'a', 'orig2');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-orig2', name: 'orig2', intent: 'orig2', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 's', use_count: 0, success_count: 0, rejected_reason: null,
+  }));
+  teach.proposeWorkflowEdit('wf-orig2', [{ index: 0, action: 'tap', args: { x: 1, y: 1 } }], 'first');
+  assert.throws(
+    () => teach.proposeWorkflowEdit('wf-orig2', [{ index: 0, action: 'tap', args: { x: 2, y: 2 } }], 'second'),
+    /pending edit exists/
+  );
+});
+
+test('POST /workflows/:id/propose-edit creates a proposed-edit sibling; 409 on second attempt', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13351', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) { clearTimeout(timer); resolve(true); }
+    });
+  });
+  assert.ok(ready);
+
+  const dir = path.join(dataDir, 'workflows', 'com-test', 'a', 'p');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-p', name: 'p', intent: 'p', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.test', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [{ index: 0, action: 'tap', args: { x: 1, y: 2 } }],
+    created_at: 1000, updated_at: 1000, source: 's', use_count: 0, success_count: 0,
+    rejected_reason: null,
+  }));
+
+  const first = await fetch('http://127.0.0.1:13351/workflows/wf-p/propose-edit', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [{ index: 0, action: 'tap', args: { x: 5, y: 5 } }], edit_reason: 'fix tap' }),
+  });
+  assert.strictEqual(first.status, 200);
+  const firstBody = await first.json();
+  assert.strictEqual(firstBody.edit_workflow.status, 'proposed-edit');
+  assert.strictEqual(firstBody.edit_workflow.parent, 'wf-p');
+
+  const second = await fetch('http://127.0.0.1:13351/workflows/wf-p/propose-edit', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [{ index: 0, action: 'tap', args: { x: 6, y: 6 } }], edit_reason: 'second' }),
+  });
+  assert.strictEqual(second.status, 409);
+  const secondBody = await second.json();
+  assert.strictEqual(secondBody.error, 'pending edit exists');
+  assert.strictEqual(secondBody.pending_edit_id, firstBody.edit_workflow.id);
+
+  const empty = await fetch('http://127.0.0.1:13351/workflows/wf-p/propose-edit', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ steps: [], edit_reason: 'empty' }),
+  });
+  assert.strictEqual(empty.status, 400);
+});

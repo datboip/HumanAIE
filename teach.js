@@ -416,6 +416,57 @@ function unflagWorkflow(id) {
   return wf;
 }
 
+function findPendingEditFor(parentId) {
+  for (const wf of listWorkflows({ status: 'proposed-edit' })) {
+    if (wf.parent === parentId) return wf;
+  }
+  return null;
+}
+
+function proposeWorkflowEdit(parentId, steps, editReason) {
+  if (!workflowsRoot) throw new Error('workflows not configured');
+  if (!Array.isArray(steps) || steps.length === 0) throw new Error('steps array required');
+  const parent = readWorkflow(parentId);
+  if (!parent) throw new Error('parent not found');
+  const existing = findPendingEditFor(parentId);
+  if (existing) {
+    const err = new Error('pending edit exists');
+    err.pending_edit_id = existing.id;
+    throw err;
+  }
+  // Slug: <parent-slug>-edit-<ts> for uniqueness even if multiple edits land
+  // over time (rejected ones get deleted; this just keeps disk paths distinct).
+  const parentSlug = slugify(parent.name);
+  const editSlug = parentSlug + '-edit-' + Date.now();
+  const dir = workflowDir(parent.package, parent.activity, editSlug);
+  fs.mkdirSync(dir, { recursive: true });
+  const wf = {
+    id: 'wf-' + Date.now(),
+    name: parent.name + ' (edit)',
+    intent: parent.intent,
+    status: 'proposed-edit',
+    source_kind: 'agent-edit',
+    package: parent.package,
+    activity: parent.activity,
+    screen_w: parent.screen_w,
+    screen_h: parent.screen_h,
+    steps: steps,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    source: parent.source,
+    use_count: 0,
+    success_count: 0,
+    rejected_reason: null,
+    flagged: false,
+    flag_reason: null,
+    flagged_at: null,
+    parent: parentId,
+    edit_reason: String(editReason || '').slice(0, 500),
+  };
+  writeWorkflowJson(path.join(dir, 'workflow.json'), wf);
+  return wf;
+}
+
 // ── Intent matching (P3 /flows) ─────────────────────────────────────────────
 // Scores how well a workflow matches a free-text intent query. Pure function;
 // no I/O. See spec 2026-05-20 § matchIntent for threshold rationale.
@@ -629,6 +680,25 @@ router.post('/workflows/:id/unflag', (req, res) => {
   } catch (e) { res.status(404).json({ error: e.message }); }
 });
 
+router.post('/workflows/:id/propose-edit', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
+  const steps = req.body && req.body.steps;
+  const editReason = req.body && req.body.edit_reason;
+  if (!Array.isArray(steps) || steps.length === 0) {
+    return res.status(400).json({ error: 'steps array required' });
+  }
+  try {
+    const edit = proposeWorkflowEdit(req.params.id, steps, editReason);
+    res.json({ ok: true, edit_workflow: edit });
+  } catch (e) {
+    if (e.message === 'pending edit exists') {
+      return res.status(409).json({ error: e.message, pending_edit_id: e.pending_edit_id });
+    }
+    if (e.message === 'parent not found') return res.status(404).json({ error: e.message });
+    res.status(400).json({ error: e.message });
+  }
+});
+
 router.delete('/workflows/:id', (req, res) => {
   if (!isSafeId(req.params.id)) return res.status(400).end();
   if (deleteWorkflow(req.params.id)) res.json({ ok: true });
@@ -657,6 +727,7 @@ module.exports = {
   slugify, workflowDir, workflowPathById, writeWorkflowJson,
   promoteSessionToWorkflow, proposeSessionAsWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
   flagWorkflow, unflagWorkflow,
+  proposeWorkflowEdit, findPendingEditFor,
   matchIntent,
   withDefaults,
 };
