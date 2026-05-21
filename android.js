@@ -281,9 +281,11 @@ if (!ADB_AVAILABLE) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // Launch a URL in the phone's default browser via Android intent.
-  // URL is whitelisted to plain http(s) — no scheme smuggling, no shell metachars.
-  // Used by the calibration suite to open /calibrate-target on the phone.
+  // Launch a URL on the phone, explicitly targeting Chrome (-p
+  // com.android.chrome). Without -p, ACTION_VIEW for http URLs on many
+  // Samsung phones routes to Google Lens or shows an intent-picker. Chrome
+  // is required anyway because the calibration target uses the Fullscreen
+  // API. URL is regex-whitelisted to plain http(s) so no scheme smuggling.
   router.post('/open-url', async (req, res) => {
     const url = req.body && req.body.url;
     if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' });
@@ -291,7 +293,8 @@ if (!ADB_AVAILABLE) {
       return res.status(400).json({ error: 'invalid url (http/https only, no shell metachars)' });
     }
     try {
-      const out = await adbAsync('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', url);
+      const out = await adbAsync('shell', 'am', 'start', '-a', 'android.intent.action.VIEW',
+                                 '-d', url, '-p', 'com.android.chrome');
       res.json({ ok: true, stdout: String(out || '').trim() });
     } catch (e) {
       res.status(500).json({ error: e.message });

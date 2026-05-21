@@ -75,11 +75,22 @@
     report(e);
   });
 
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+  }
   document.getElementById('fs-btn').addEventListener('click', function() {
     var el = document.documentElement;
     var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
     if (fn) {
       try { fn.call(el); } catch (e) {}
+    }
+  });
+  document.addEventListener('fullscreenchange', function() {
+    if (isFullscreen()) {
+      $status.textContent = '✅ Fullscreen — ready for calibration';
+      sendReady();
+    } else {
+      $status.textContent = 'Tap ⛶ Fullscreen above, then start calibration from cam UI';
     }
   });
   document.getElementById('clear-btn').addEventListener('click', function() {
