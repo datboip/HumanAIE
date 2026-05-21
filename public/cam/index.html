@@ -1263,6 +1263,12 @@
           <div class="popup-row">
             <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="reconnectPhone()">⟳ Reconnect ADB</button>
           </div>
+          <div class="popup-row">
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateClicks()" title="Tests screen→phone coord mapping by asking you to tap 9 known target dots in order">📐 Calibrate clicks</button>
+          </div>
+          <div class="popup-row">
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateServerTaps()" title="Server fires /android/tap at 9 known phone coords; verify visually that the phone receives each tap at the marker">📐 Calibrate (server taps)</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1341,6 +1347,7 @@
     interactionMode: 'click',
     waitforNotified: false,
     showCursor: true,
+    calibratingClicks: false,
     // Per-source visualization toggles, controlled by side-panel switches.
     showHumanHistory: true,
     showAiHistory: true,
@@ -2344,14 +2351,12 @@
       y: rect.top  + offsetY + (phoneY / nh) * renderH,
     };
   }
-  window.calibrateTaps = function() {
-    if (!androidMode) {
-      alert('Calibration only works in HANDROID mode.');
-      return;
-    }
+  // 9 calibration points at 10%/50%/90% of width × height.
+  // Used by both calibrateServerTaps (server-fires-taps test) and
+  // calibrateClicks (interactive screenToPhone test).
+  function buildCalibrationGrid() {
     var W = androidStatus.screen_w || 1080;
     var H = androidStatus.screen_h || 2340;
-    // 9 positions: 10%/50%/90% of width × 10%/50%/90% of height
     var positions = [];
     var xs = [0.1, 0.5, 0.9], ys = [0.1, 0.5, 0.9];
     var labels = ['TL','TC','TR','ML','C','MR','BL','BC','BR'];
@@ -2365,6 +2370,20 @@
         });
       }
     }
+    return positions;
+  }
+
+  // Server-fires-taps test: the server dispatches /android/tap at known phone
+  // coords, with a visual marker shown where we expect the tap to land. The
+  // human verifies on the phone screen (with Android's Pointer Location overlay
+  // enabled) that the tap actually landed at the marker. This tests
+  // ADB → Android pixel accuracy, NOT the screenToPhone math.
+  window.calibrateServerTaps = function() {
+    if (!androidMode) {
+      alert('Calibration only works in HANDROID mode.');
+      return;
+    }
+    var positions = buildCalibrationGrid();
     positions.forEach(function(p, idx) {
       setTimeout(function() {
         var ss = phoneToScreen(p.px, p.py);
@@ -2384,6 +2403,159 @@
       }, idx * 600);
     });
   };
+  // Backwards-compat alias.
+  window.calibrateTaps = window.calibrateServerTaps;
+
+  // Interactive click test: 9 numbered dots appear on the viewport at known
+  // phone coords. The human clicks each in order. We compare the
+  // screenToPhone result of each click to the target phone coord and report
+  // per-dot offset + overall accuracy. This tests the client-side coord
+  // mapping; if these match within a few pixels, every tap the human or AI
+  // dispatches is hitting the intended phone pixel.
+  window.calibrateClicks = function() {
+    if (!androidMode) {
+      alert('Calibration only works in HANDROID mode.');
+      return;
+    }
+    if (state.calibratingClicks) return;
+    state.calibratingClicks = true;
+
+    var positions = buildCalibrationGrid();
+    var nextIdx = 0;
+    var results = [];
+
+    var overlay = document.createElement('div');
+    overlay.id = 'calib-overlay';
+    overlay.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:30';
+
+    var instr = document.createElement('div');
+    instr.id = 'calib-instr';
+    instr.style.cssText = 'position:absolute;left:50%;top:8px;transform:translateX(-50%);background:rgba(102,51,204,0.92);color:#fff;font-family:monospace;font-size:11px;padding:6px 12px;border-radius:4px;pointer-events:auto;z-index:32;font-weight:bold';
+    instr.textContent = 'Click dot 1 of 9';
+    overlay.appendChild(instr);
+
+    var exitBtn = document.createElement('button');
+    exitBtn.style.cssText = 'position:absolute;right:8px;top:8px;background:#3a1818;color:#ff6666;border:1px solid #d80000;padding:4px 10px;font-size:11px;cursor:pointer;pointer-events:auto;z-index:32;font-family:inherit';
+    exitBtn.textContent = '✕ Exit';
+    exitBtn.addEventListener('click', function() {
+      overlay.remove();
+      state.calibratingClicks = false;
+    });
+    overlay.appendChild(exitBtn);
+
+    var wr = $viewportWrapper.getBoundingClientRect();
+    positions.forEach(function(p, idx) {
+      var ss = phoneToScreen(p.px, p.py);
+      if (!ss) return;
+      var dotEl = document.createElement('div');
+      dotEl.className = 'calib-dot';
+      dotEl.dataset.idx = String(idx);
+      dotEl.style.cssText = 'position:absolute;left:' + (ss.x - wr.left - 20) + 'px;top:' + (ss.y - wr.top - 20) + 'px;width:40px;height:40px;border-radius:50%;border:3px solid #ff9933;background:rgba(255,153,51,0.35);color:#fff;font-family:monospace;font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center;cursor:crosshair;pointer-events:auto;box-shadow:0 0 0 1px rgba(0,0,0,0.6),0 2px 6px rgba(0,0,0,0.5);z-index:31';
+      dotEl.textContent = String(idx + 1);
+      dotEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (parseInt(dotEl.dataset.idx, 10) !== nextIdx) return;
+        var observed = screenToPhone(e);
+        if (!observed) return;
+        var dx = observed.x - p.px;
+        var dy = observed.y - p.py;
+        var err = Math.hypot(dx, dy);
+        results.push({ label: p.label, target: { x: p.px, y: p.py }, observed: { x: Math.round(observed.x), y: Math.round(observed.y) }, dx: Math.round(dx), dy: Math.round(dy), err: err });
+        var color = err < 5 ? '#3ddc84' : err < 20 ? '#cccc55' : '#d80000';
+        dotEl.style.background = color;
+        dotEl.style.borderColor = color;
+        dotEl.style.cursor = 'default';
+        dotEl.textContent = '✓';
+        nextIdx++;
+        if (nextIdx < positions.length) {
+          instr.textContent = 'Click dot ' + (nextIdx + 1) + ' of ' + positions.length;
+        } else {
+          showCalibrationResults(results, overlay, instr);
+        }
+      });
+      overlay.appendChild(dotEl);
+    });
+
+    $viewportWrapper.appendChild(overlay);
+  };
+
+  function showCalibrationResults(results, overlay, instr) {
+    instr.textContent = 'Done — see results';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0a0a0a;border:2px solid #6633cc;border-radius:6px;padding:16px;min-width:340px;color:#fff;font-family:monospace;font-size:11px;z-index:33;box-shadow:0 4px 20px rgba(0,0,0,0.8);pointer-events:auto';
+
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'font-weight:bold;color:#cccc55;margin-bottom:10px;font-size:13px';
+    hdr.textContent = '📐 Calibration results';
+    panel.appendChild(hdr);
+
+    var table = document.createElement('table');
+    table.style.cssText = 'border-collapse:collapse;width:100%;margin-bottom:12px';
+    var thead = document.createElement('tr');
+    thead.style.cssText = 'border-bottom:1px solid #333;color:#888';
+    ['Dot', 'Target', 'Observed', 'Δx,Δy', 'err'].forEach(function(label) {
+      var th = document.createElement('th');
+      th.style.cssText = 'text-align:left;padding:3px 6px;font-weight:normal;font-size:10px';
+      th.textContent = label;
+      thead.appendChild(th);
+    });
+    table.appendChild(thead);
+
+    results.forEach(function(r) {
+      var color = r.err < 5 ? '#3ddc84' : r.err < 20 ? '#cccc55' : '#d80000';
+      var tr = document.createElement('tr');
+      tr.style.color = color;
+      var cells = [
+        r.label,
+        '(' + r.target.x + ',' + r.target.y + ')',
+        '(' + r.observed.x + ',' + r.observed.y + ')',
+        (r.dx >= 0 ? '+' : '') + r.dx + ',' + (r.dy >= 0 ? '+' : '') + r.dy,
+        r.err.toFixed(1) + 'px',
+      ];
+      cells.forEach(function(text, ci) {
+        var td = document.createElement('td');
+        td.style.cssText = 'padding:2px 6px;' + (ci === 0 ? '' : 'text-align:right;');
+        td.textContent = text;
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    panel.appendChild(table);
+
+    var errs = results.map(function(r) { return r.err; });
+    var maxErr = errs.reduce(function(m, e) { return e > m ? e : m; }, 0);
+    var avgErr = errs.reduce(function(s, e) { return s + e; }, 0) / errs.length;
+    var verdict = avgErr < 5 ? '✅ mapping is accurate'
+                : avgErr < 20 ? '⚠ minor offset (probably tap precision)'
+                              : '❌ significant misalignment — check phone screen_w/h or rotation';
+    var summary = document.createElement('div');
+    summary.style.cssText = 'border-top:1px solid #333;padding-top:8px;margin-top:8px;font-size:11px';
+    summary.textContent = 'Avg ' + avgErr.toFixed(1) + 'px · Max ' + maxErr.toFixed(1) + 'px — ' + verdict;
+    panel.appendChild(summary);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:6px;margin-top:12px';
+    var retryBtn = document.createElement('button');
+    retryBtn.style.cssText = 'flex:1;padding:6px;background:transparent;color:#888;border:1px solid #444;border-radius:3px;cursor:pointer;font-family:inherit';
+    retryBtn.textContent = 'Retry';
+    retryBtn.addEventListener('click', function() {
+      overlay.remove();
+      state.calibratingClicks = false;
+      window.calibrateClicks();
+    });
+    btnRow.appendChild(retryBtn);
+    var closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'flex:1;padding:6px;background:#6633cc;color:#fff;border:1px solid #6633cc;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:bold';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', function() {
+      overlay.remove();
+      state.calibratingClicks = false;
+    });
+    btnRow.appendChild(closeBtn);
+    panel.appendChild(btnRow);
+
+    overlay.appendChild(panel);
+  }
 
   window.phoneScreenshot = function() {
     // Open in a new tab — user can right-click → Save As.
@@ -3525,6 +3697,7 @@
     if (!e.isPrimary) return;
     if (state.splashVisible) return;
     if (state.interactionMode === 'highlight') return; // highlights handled via the simple-click branch below
+    if (state.calibratingClicks) return; // calibration owns clicks while it's active
     $viewport.setPointerCapture(e.pointerId);
     var coords = screenToVirtual(e);
     if (!coords) return;
