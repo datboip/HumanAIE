@@ -116,6 +116,21 @@
   sendReady();
   var readyTimer = setInterval(sendReady, 2000);
   setTimeout(function() { clearInterval(readyTimer); }, 10000);
+
+  // Auto-clear: poll /calibrate-target/clear-tick. The cam UI bumps the tick
+  // before each calibration run so accumulated dots don't bleed across runs.
+  var lastTick = null;
+  setInterval(function() {
+    fetch('/calibrate-target/clear-tick').then(function(r) { return r.json(); }).then(function(d) {
+      if (lastTick === null) { lastTick = d.tick; return; }
+      if (d.tick !== lastTick) {
+        lastTick = d.tick;
+        while ($canvas.firstChild) $canvas.removeChild($canvas.firstChild);
+        n = 0;
+        $status.textContent = 'Cleared by host — ready for fresh run';
+      }
+    }).catch(function() {});
+  }, 1000);
 })();
 </script>
 </body></html>

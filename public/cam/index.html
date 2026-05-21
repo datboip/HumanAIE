@@ -2769,7 +2769,11 @@
       startBtn.style.cursor = 'default';
       startBtn.style.opacity = '0.6';
       startBtn.textContent = 'Firing taps...';
-      runFiring();
+      // Tell the phone-side page to wipe accumulated dots from any prior
+      // run, so this run's dots show cleanly and numbering starts at 1.
+      fetch('/calibrate-target/clear', { method: 'POST' }).catch(function() {});
+      // Give the page ~1.2s to poll the new tick and clear before we fire.
+      setTimeout(runFiring, 1200);
     });
 
     // ---- Firing + reports --------------------------------------------------

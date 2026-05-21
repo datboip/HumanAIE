@@ -216,6 +216,20 @@ app.get('/calibrate-target/ready', (req, res) => {
   res.json({ ready_at: calibReadyAt, age_ms: calibReadyAt ? Date.now() - calibReadyAt : null });
 });
 
+// Clear tick — the cam UI / orchestrator POSTs here right before firing
+// calibration taps. The phone-side page polls /calibrate-target/clear-tick
+// and wipes its accumulated dots when the tick changes, so each run shows
+// only the current run's dots (no cross-run number confusion).
+let calibClearTick = 0;
+app.post('/calibrate-target/clear', (req, res) => {
+  calibClearTick++;
+  CALIB_REPORTS.length = 0;
+  res.json({ ok: true, tick: calibClearTick });
+});
+app.get('/calibrate-target/clear-tick', (req, res) => {
+  res.json({ tick: calibClearTick });
+});
+
 // One-shot calibration orchestrator. AI agents call this to verify click
 // accuracy before driving the phone. Opens the target page on the phone,
 // fires 9 taps at known coords, waits for reports, returns drift summary.
