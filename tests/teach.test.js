@@ -594,18 +594,22 @@ test('GET /flows returns top match above threshold', async (t) => {
   });
   assert.ok(ready);
 
-  // Seed two approved workflows
+  // Seed two approved workflows at their canonical slug paths
+  // (slugify('Post a photo') === 'post-a-photo'; slugify('Send DM') === 'send-dm').
+  // The slugs must match what workflowPathById will compute, otherwise the
+  // /flows use_count write-back lands at a different path than where
+  // listWorkflows reads, and the test fixture would diverge from production.
   const baseDir = path.join(dataDir, 'workflows', 'com-test', 'a');
-  fs.mkdirSync(path.join(baseDir, 'post'), { recursive: true });
-  fs.writeFileSync(path.join(baseDir, 'post', 'workflow.json'), JSON.stringify({
+  fs.mkdirSync(path.join(baseDir, 'post-a-photo'), { recursive: true });
+  fs.writeFileSync(path.join(baseDir, 'post-a-photo', 'workflow.json'), JSON.stringify({
     id: 'wf-post', name: 'Post a photo', intent: 'post a photo to feed',
     status: 'approved', source_kind: 'human-promoted',
     package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
     steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
     success_count: 5, rejected_reason: null,
   }));
-  fs.mkdirSync(path.join(baseDir, 'dm'), { recursive: true });
-  fs.writeFileSync(path.join(baseDir, 'dm', 'workflow.json'), JSON.stringify({
+  fs.mkdirSync(path.join(baseDir, 'send-dm'), { recursive: true });
+  fs.writeFileSync(path.join(baseDir, 'send-dm', 'workflow.json'), JSON.stringify({
     id: 'wf-dm', name: 'Send DM', intent: 'send a direct message',
     status: 'approved', source_kind: 'human-promoted',
     package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
@@ -663,4 +667,87 @@ test('GET /flows returns workflow:null when only proposed workflows exist (defau
   const prop = await fetch('http://127.0.0.1:13346/flows?package=com.test&intent=send%20dm&min_status=proposed').then(r => r.json());
   assert.ok(prop.workflow);
   assert.strictEqual(prop.workflow.id, 'wf-prop');
+});
+
+test('GET /flows tiebreaker prefers higher success_count when scores tie', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13347', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // Two approved workflows with distinct names (so canonical slug paths
+  // don't collide) but shared intent text containing the query substring →
+  // both score 0.9 via matchIntent's substring path. Differentiator:
+  // success_count. wf-veteran has 10, wf-rookie has 0.
+  const baseDir = path.join(dataDir, 'workflows', 'com-test', 'a');
+  for (const [name, id, sc] of [['Post photo veteran', 'wf-veteran', 10], ['Post photo rookie', 'wf-rookie', 0]]) {
+    const dir = path.join(baseDir, name.toLowerCase().replace(/ /g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+      id, name, intent: 'post a photo to feed',
+      status: 'approved', source_kind: 'human-promoted',
+      package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
+      steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
+      success_count: sc, rejected_reason: null,
+    }));
+  }
+
+  // Tied score (0.9 substring on both), tiebreaker picks veteran.
+  const res = await fetch('http://127.0.0.1:13347/flows?package=com.test&intent=post%20a%20photo').then(r => r.json());
+  assert.ok(res.workflow);
+  assert.strictEqual(res.workflow.id, 'wf-veteran');
+});
+
+test('GET /flows returns null with low-confidence reason below 0.4 threshold', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13348', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // Seed one workflow that matches partially: name "Send Direct Message"
+  // queried with "open camera settings" → tokens [open, camera, settings],
+  // none of which appear in "send direct message" → score 0/3 = 0.0 < 0.4.
+  const dir = path.join(dataDir, 'workflows', 'com-test', 'a', 'send-dm');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-dm', name: 'Send Direct Message', intent: 'send direct message',
+    status: 'approved', source_kind: 'human-promoted',
+    package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
+    steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
+    success_count: 0, rejected_reason: null,
+  }));
+
+  const res = await fetch('http://127.0.0.1:13348/flows?package=com.test&intent=open%20camera%20settings').then(r => r.json());
+  assert.strictEqual(res.workflow, null);
+  assert.strictEqual(res.reason, 'low confidence');
+  assert.ok(typeof res.confidence === 'number');
+  assert.ok(res.confidence < 0.4);
 });

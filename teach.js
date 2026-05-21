@@ -456,6 +456,10 @@ router.get('/flows', (req, res) => {
   if (candidates.length === 0) {
     return res.json({ workflow: null, reason: 'no candidates' });
   }
+  // If no intent is supplied, matchIntent returns 0.5 for every candidate,
+  // so all scores tie and the tiebreaker chain picks the highest-success_count
+  // approved flow for this (package, activity). That's the intentional
+  // degraded-mode behavior: "give me the most battle-tested flow you've got."
   const ranked = candidates.map(w => ({ w, score: matchIntent(w, req.query.intent) }))
                             .sort((a, b) => {
                               if (b.score !== a.score) return b.score - a.score;
@@ -472,9 +476,11 @@ router.get('/flows', (req, res) => {
   // Bump use_count: this is the "attempt" signal — AI fetched the flow
   // intending to replay it. success_count is bumped separately by
   // endActive() on /teach/done if the replay actually completes.
+  // We intentionally do NOT touch updated_at here — that field feeds the
+  // recency tiebreaker above, and self-stamping on every fetch would lock
+  // whichever flow was queried first into a permanent winner.
   try {
     best.w.use_count = (best.w.use_count || 0) + 1;
-    best.w.updated_at = Date.now();
     const wfPath = workflowPathById(best.w.id);
     if (wfPath) writeWorkflowJson(wfPath, best.w);
   } catch {}
