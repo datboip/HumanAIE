@@ -298,10 +298,14 @@ function promoteSessionToWorkflow(sessionId, { name }) {
 // Scores how well a workflow matches a free-text intent query. Pure function;
 // no I/O. See spec 2026-05-20 § matchIntent for threshold rationale.
 function matchIntent(workflow, queryIntent) {
-  if (!queryIntent) return 0.5;
-  const text = ((workflow && workflow.name || '') + ' ' + (workflow && workflow.intent || '')).toLowerCase();
+  if (queryIntent == null || queryIntent === '') return 0.5;
+  const name = (workflow && workflow.name) || '';
+  const intent = (workflow && workflow.intent) || '';
+  const text = (name + ' ' + intent).toLowerCase();
   const q = String(queryIntent).toLowerCase();
-  if (text && text.includes(q)) return 0.9;
+  if (text.includes(q)) return 0.9;
+  // Token-fallback: split on non-word chars, keep tokens long enough to be
+  // discriminating (≥3 chars filters out "a", "to", "is", etc.).
   const tokens = q.split(/\W+/).filter(t => t.length >= 3);
   if (tokens.length === 0) return 0.4;
   const hits = tokens.filter(t => text.includes(t)).length;

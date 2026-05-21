@@ -311,6 +311,12 @@ test('matchIntent handles missing workflow fields gracefully', () => {
   assert.strictEqual(teach.matchIntent(wf, 'anything'), 0);
 });
 
+test('matchIntent 0.4 floor does not outscore a single-token partial match', () => {
+  // "send" is a substring of "send a dm" → hits the 0.9 full-match path, NOT the 0.4 floor
+  const wf = { name: 'Send a DM', intent: '' };
+  assert.strictEqual(teach.matchIntent(wf, 'send'), 0.9);
+});
+
 test('PATCH /teach/sessions/:id/steps round-trip', async (t) => {
   const { spawn } = require('node:child_process');
   const path = require('node:path');
