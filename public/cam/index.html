@@ -2145,7 +2145,12 @@
   }
 
   function openProposedEditDiff(editWf) {
-    fetch('/workflows').then(function(r) { return r.json(); }).then(function(all) {
+    fetch('/workflows').then(function(r) { return r.json(); }).catch(function(err) {
+      console.warn('openProposedEditDiff: fetch failed', err);
+      alert('Could not load parent workflow for diff (network error).');
+      return null;
+    }).then(function(all) {
+      if (!all) return;
       var parent = all.find(function(w) { return w.id === editWf.parent; });
       var overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:130;display:flex;align-items:center;justify-content:center;padding:20px';
@@ -2218,7 +2223,7 @@
     if (s.action === 'swipe' && s.args) return 'swipe (' + s.args.x1 + ',' + s.args.y1 + ') → (' + s.args.x2 + ',' + s.args.y2 + ')';
     if (s.action === 'key' && s.args) return 'key ' + s.args.keycode;
     if (s.action === 'type' && s.args) return 'type "' + (s.args.text || '').slice(0, 20) + '"';
-    return s.action;
+    return s.action || '(unknown)';
   }
 
   function renderRejectedRow(w) {
