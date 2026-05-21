@@ -810,3 +810,28 @@ test('endActive(done) bumps source workflow success_count when replay_of is set'
   const wf2 = teach.readWorkflow('wf-src');
   assert.strictEqual(wf2.success_count, 1);
 });
+
+test('readWorkflow defaults P3-era missing fields (flagged, parent, edit_reason, flag_reason, flagged_at)', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  const pkgDir = path.join(wfDir, 'com-foo', 'a', 'p3era');
+  fs.mkdirSync(pkgDir, { recursive: true });
+  // P3-era workflow.json — has status/intent/source_kind but no P4 fields
+  fs.writeFileSync(path.join(pkgDir, 'workflow.json'), JSON.stringify({
+    id: 'wf-p3', name: 'P3 flow', intent: 'p3 flow', status: 'approved',
+    source_kind: 'human-promoted', package: 'com.foo', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 'session-x', use_count: 3, success_count: 2, rejected_reason: null,
+  }));
+  const wf = teach.readWorkflow('wf-p3');
+  assert.ok(wf);
+  // P3 fields preserved
+  assert.strictEqual(wf.status, 'approved');
+  assert.strictEqual(wf.success_count, 2);
+  // New P4 fields defaulted
+  assert.strictEqual(wf.flagged, false);
+  assert.strictEqual(wf.flag_reason, null);
+  assert.strictEqual(wf.flagged_at, null);
+  assert.strictEqual(wf.parent, null);
+  assert.strictEqual(wf.edit_reason, null);
+});

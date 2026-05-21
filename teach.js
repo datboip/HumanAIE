@@ -261,11 +261,16 @@ function listWorkflows({ package: pkgFilter, activity: actFilter, status: status
 function withDefaults(wf) {
   if (!wf) return wf;
   return Object.assign({}, wf, {
-    status:        wf.status        ?? 'approved',
-    intent:        wf.intent        ?? wf.name ?? '',
-    source_kind:   wf.source_kind   ?? 'human-promoted',
-    success_count: wf.success_count ?? 0,
+    status:          wf.status          ?? 'approved',
+    intent:          wf.intent          ?? wf.name ?? '',
+    source_kind:     wf.source_kind     ?? 'human-promoted',
+    success_count:   wf.success_count   ?? 0,
     rejected_reason: wf.rejected_reason ?? null,
+    flagged:         wf.flagged         ?? false,
+    flag_reason:     wf.flag_reason     ?? null,
+    flagged_at:      wf.flagged_at      ?? null,
+    parent:          wf.parent          ?? null,
+    edit_reason:     wf.edit_reason     ?? null,
   });
 }
 
