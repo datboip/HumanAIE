@@ -291,9 +291,9 @@ function promoteSessionToWorkflow(sessionId, { name }) {
   const wf = {
     id: 'wf-' + Date.now(),
     name: String(name || 'Untitled'),
-    intent: String(name || ''),                  // NEW — defaults to name; AI may override via /propose
-    status: 'approved',                          // NEW — explicit Save = approved
-    source_kind: 'human-promoted',               // NEW
+    intent: String(name || ''),
+    status: 'approved',
+    source_kind: 'human-promoted',
     package: session.package,
     activity: session.activity,
     screen_w: session.screen_w,
@@ -303,8 +303,8 @@ function promoteSessionToWorkflow(sessionId, { name }) {
     updated_at: Date.now(),
     source: sessionId,
     use_count: 0,
-    success_count: 0,                            // NEW
-    rejected_reason: null,                       // NEW
+    success_count: 0,
+    rejected_reason: null,
   };
   writeWorkflowJson(path.join(dir, 'workflow.json'), wf);
   return wf;
