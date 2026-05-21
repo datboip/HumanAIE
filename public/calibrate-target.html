@@ -48,10 +48,17 @@
     var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
     var cx = t.clientX, cy = t.clientY;
     var dpr = window.devicePixelRatio || 1;
-    // CSS pixels × dpr ≈ phone hardware pixels when the page fills the viewport
-    // 1:1. Phone coords correspond to what /android/tap takes.
-    var phoneX = cx * dpr;
-    var phoneY = cy * dpr;
+    // The page rarely starts at y=0 — Android's status bar still steals
+    // ~30-40 CSS px at the top even after requestFullscreen on most Chrome
+    // builds. The difference between screen.height (full device CSS h) and
+    // window.innerHeight (visible page CSS h) is exactly that offset. Add
+    // it to clientY before scaling so reported phoneY matches the coord
+    // ADB used. Same defensive logic for X in case future orientations
+    // produce a left-side chrome offset.
+    var xOffsetCss = Math.max(0, (window.screen.width || 0) - window.innerWidth);
+    var yOffsetCss = Math.max(0, (window.screen.height || 0) - window.innerHeight);
+    var phoneX = (cx + xOffsetCss) * dpr;
+    var phoneY = (cy + yOffsetCss) * dpr;
     dotAt(cx, cy, phoneX, phoneY);
     $status.textContent = 'Last: (' + Math.round(phoneX) + ', ' + Math.round(phoneY) + ')  ·  ' + n + ' total';
     fetch('/calibrate-target/report', {
