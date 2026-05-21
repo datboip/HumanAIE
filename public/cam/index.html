@@ -1779,6 +1779,11 @@
     }, 5000);
   }
 
+  // Which kind of flows the landing is currently scoped to.
+  // 'phone' = sessions/workflows captured from /android/* (have a package field).
+  // 'web' = browser sessions (no package; scaffolding only — web capture not implemented yet).
+  var flowsSubtab = 'phone';
+
   function renderTeachLanding() {
     var landing = document.getElementById('teach-landing');
     if (!landing) return;
@@ -1786,17 +1791,72 @@
       fetch('/teach/sessions').then(function(r) { return r.json(); }).catch(function() { return []; }),
       fetch('/workflows').then(function(r) { return r.json(); }).catch(function() { return []; }),
     ]).then(function(results) {
-      var sessions = results[0] || [];
-      var workflows = results[1] || [];
+      var allSessions = results[0] || [];
+      var allWorkflows = results[1] || [];
+      // Partition by capture kind. Today every captured item has a non-empty
+      // `package` (Android only), so all data lives in the Phone bucket.
+      // When web capture lands, those rows will have no package and surface
+      // under the Web sub-tab without any other plumbing change.
+      var isPhone = function(x) { return !!(x && x.package); };
+      var sessions  = flowsSubtab === 'phone' ? allSessions.filter(isPhone)  : allSessions.filter(function(x) { return !isPhone(x); });
+      var workflows = flowsSubtab === 'phone' ? allWorkflows.filter(isPhone) : allWorkflows.filter(function(x) { return !isPhone(x); });
+
       // Clear and rebuild via DOM API (no innerHTML — keeps user-controlled
       // strings safely text-only).
       while (landing.firstChild) landing.removeChild(landing.firstChild);
+
+      landing.appendChild(buildFlowsSubtabBar(allSessions, allWorkflows));
+
+      if (flowsSubtab === 'web' && sessions.length === 0 && workflows.length === 0) {
+        var stub = document.createElement('div');
+        stub.style.cssText = 'color:#888;font-size:13px;padding:24px;text-align:center;border:1px dashed #2a2a2a;border-radius:4px;margin-top:8px';
+        var line1 = document.createElement('div');
+        line1.style.cssText = 'font-weight:bold;margin-bottom:6px';
+        line1.textContent = '🌐 No web flows yet';
+        stub.appendChild(line1);
+        var line2 = document.createElement('div');
+        line2.style.cssText = 'font-size:11px;color:#666';
+        line2.textContent = 'Web capture (recording browser nav/clicks as replayable flows) is not implemented yet — coming in a later release.';
+        stub.appendChild(line2);
+        landing.appendChild(stub);
+        return;
+      }
+
       var grid = document.createElement('div');
       grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:16px';
       grid.appendChild(buildLandingColumn('Recent attempts (click any → review + save as flow)', sessions, renderSessionRow));
       grid.appendChild(buildWorkflowsColumn(workflows));
       landing.appendChild(grid);
     });
+  }
+
+  function buildFlowsSubtabBar(allSessions, allWorkflows) {
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;gap:4px;margin-bottom:12px;border-bottom:2px solid #2a2a2a;padding-bottom:0';
+    var phoneCount = allSessions.filter(function(x) { return x.package; }).length
+                   + allWorkflows.filter(function(x) { return x.package; }).length;
+    var webCount   = allSessions.filter(function(x) { return !x.package; }).length
+                   + allWorkflows.filter(function(x) { return !x.package; }).length;
+    bar.appendChild(makeSubtabBtn('phone', '📱 Phone (' + phoneCount + ')'));
+    bar.appendChild(makeSubtabBtn('web',   '🌐 Web (' + webCount + ')'));
+    return bar;
+  }
+
+  function makeSubtabBtn(kind, label) {
+    var btn = document.createElement('button');
+    var active = (flowsSubtab === kind);
+    btn.style.cssText = 'background:' + (active ? '#6633cc' : 'transparent') +
+                        ';color:' + (active ? '#fff' : '#888') +
+                        ';border:1px solid ' + (active ? '#6633cc' : '#2a2a2a') +
+                        ';border-bottom:none;border-radius:4px 4px 0 0;padding:6px 14px;cursor:pointer;font-size:12px;' +
+                        (active ? 'font-weight:bold;margin-bottom:-2px;' : '');
+    btn.textContent = label;
+    btn.addEventListener('click', function() {
+      if (flowsSubtab === kind) return;
+      flowsSubtab = kind;
+      renderTeachLanding();
+    });
+    return btn;
   }
 
   function buildLandingColumn(title, items, rowBuilder) {
