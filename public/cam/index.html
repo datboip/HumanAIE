@@ -1264,10 +1264,7 @@
             <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="reconnectPhone()">⟳ Reconnect ADB</button>
           </div>
           <div class="popup-row">
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateClicks()" title="Tests screen→phone coord mapping by asking you to tap 9 known target dots in order">📐 Calibrate clicks</button>
-          </div>
-          <div class="popup-row">
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateServerTaps()" title="Server fires /android/tap at 9 known phone coords; verify visually that the phone receives each tap at the marker">📐 Calibrate (server taps)</button>
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateClicks()" title="Tests screen→phone coord mapping by asking you to tap 9 known target bullseyes">📐 Calibrate</button>
           </div>
         </div>
       </div>
@@ -2447,11 +2444,29 @@
     positions.forEach(function(p, idx) {
       var ss = phoneToScreen(p.px, p.py);
       if (!ss) return;
+      // Outer ring — large hollow circle, generous click area.
       var dotEl = document.createElement('div');
       dotEl.className = 'calib-dot';
       dotEl.dataset.idx = String(idx);
-      dotEl.style.cssText = 'position:absolute;left:' + (ss.x - wr.left - 20) + 'px;top:' + (ss.y - wr.top - 20) + 'px;width:40px;height:40px;border-radius:50%;border:3px solid #ff9933;background:rgba(255,153,51,0.35);color:#fff;font-family:monospace;font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center;cursor:crosshair;pointer-events:auto;box-shadow:0 0 0 1px rgba(0,0,0,0.6),0 2px 6px rgba(0,0,0,0.5);z-index:31';
-      dotEl.textContent = String(idx + 1);
+      var RING = 48;
+      dotEl.style.cssText = 'position:absolute;left:' + (ss.x - wr.left - RING/2) + 'px;top:' + (ss.y - wr.top - RING/2) + 'px;width:' + RING + 'px;height:' + RING + 'px;border-radius:50%;border:2px solid #ff9933;background:rgba(255,153,51,0.10);cursor:crosshair;pointer-events:auto;box-shadow:0 0 0 1px rgba(0,0,0,0.6);z-index:31';
+      // Bullseye — small solid dot dead-center; this is what you aim for.
+      var bull = document.createElement('div');
+      bull.style.cssText = 'position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#ff9933;box-shadow:0 0 0 1px rgba(0,0,0,0.7);pointer-events:none';
+      dotEl.appendChild(bull);
+      // Crosshair lines for finer aim.
+      var hLine = document.createElement('div');
+      hLine.style.cssText = 'position:absolute;left:50%;top:50%;width:' + (RING - 14) + 'px;height:1px;margin:0 0 0 -' + ((RING - 14) / 2) + 'px;background:rgba(255,153,51,0.55);pointer-events:none';
+      dotEl.appendChild(hLine);
+      var vLine = document.createElement('div');
+      vLine.style.cssText = 'position:absolute;left:50%;top:50%;width:1px;height:' + (RING - 14) + 'px;margin:-' + ((RING - 14) / 2) + 'px 0 0 0;background:rgba(255,153,51,0.55);pointer-events:none';
+      dotEl.appendChild(vLine);
+      // Number label, tucked at the top-right so it doesn't obscure the bullseye.
+      var num = document.createElement('div');
+      num.style.cssText = 'position:absolute;left:' + (RING - 2) + 'px;top:-4px;font-family:monospace;font-size:10px;font-weight:bold;color:#ff9933;text-shadow:0 0 3px rgba(0,0,0,0.9);pointer-events:none';
+      num.textContent = String(idx + 1);
+      dotEl.appendChild(num);
+
       dotEl.addEventListener('click', function(e) {
         e.stopPropagation();
         if (parseInt(dotEl.dataset.idx, 10) !== nextIdx) return;
@@ -2462,10 +2477,21 @@
         var err = Math.hypot(dx, dy);
         results.push({ label: p.label, target: { x: p.px, y: p.py }, observed: { x: Math.round(observed.x), y: Math.round(observed.y) }, dx: Math.round(dx), dy: Math.round(dy), err: err });
         var color = err < 5 ? '#3ddc84' : err < 20 ? '#cccc55' : '#d80000';
-        dotEl.style.background = color;
+        // Recolor the ring + bullseye by accuracy.
         dotEl.style.borderColor = color;
+        bull.style.background = color;
+        hLine.style.background = color;
+        vLine.style.background = color;
+        num.style.color = color;
         dotEl.style.cursor = 'default';
-        dotEl.textContent = '✓';
+        // Drop a click marker AT the observed phone coord (mapped back to
+        // screen space) so the offset between bullseye and click is visible.
+        var clickSS = phoneToScreen(observed.x, observed.y);
+        if (clickSS) {
+          var marker = document.createElement('div');
+          marker.style.cssText = 'position:absolute;left:' + (clickSS.x - wr.left - 4) + 'px;top:' + (clickSS.y - wr.top - 4) + 'px;width:8px;height:8px;border-radius:50%;background:' + color + ';border:1.5px solid #fff;pointer-events:none;z-index:32;box-shadow:0 0 0 1px rgba(0,0,0,0.7),0 1px 3px rgba(0,0,0,0.5)';
+          overlay.appendChild(marker);
+        }
         nextIdx++;
         if (nextIdx < positions.length) {
           instr.textContent = 'Click dot ' + (nextIdx + 1) + ' of ' + positions.length;
