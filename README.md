@@ -326,6 +326,46 @@ exploring. The contract:
    instead. Burning tokens on retries when the human is one click away is the
    anti-pattern Teaching Mode is designed to eliminate.
 
+### Click calibration (P3.1)
+
+Before driving the phone, verify click accuracy with one call:
+
+```
+POST /calibrate/start
+```
+
+Returns:
+
+```
+{
+  ok: true,
+  captured: 9, total: 9,
+  avg_err_px: 2.3, max_err_px: 4.1,
+  verdict: "accurate",
+  pairs: [{ target: {px,py}, observed: {x,y}, dx, dy, err }, ...]
+}
+```
+
+Verdicts:
+
+- **accurate** (avg err < 5px) — proceed with replay or exploration.
+- **minor-offset** (avg err < 30px) — proceed, but expect occasional misses on
+  small UI elements. Re-run if `/waitfor-highlight` fires for a target miss.
+- **misaligned** (avg err ≥ 30px) — stop. Call `/waitfor-highlight` with a
+  message like "Click drift exceeded 30px, check phone rotation or screen
+  density." A human should verify before resuming.
+- **incomplete** (< half the reports came back) — the calibration page didn't
+  load (phone locked, Chrome not default browser, page got dismissed). Ask
+  the human for help.
+
+The orchestrator automatically opens `/calibrate-target` on the phone via ADB
+intent, fires 9 taps in a 3×3 grid at 10/50/90% of the screen, and pairs each
+fired tap with the touch reported by the page. Recommended call points:
+
+- On first connect to a new phone.
+- After a screen rotation event (landscape ↔ portrait).
+- Any time `/waitfor-highlight` resolves with a "click missed target" reason.
+
 ---
 
 ## Claude Code Plugin
