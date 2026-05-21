@@ -2683,7 +2683,33 @@
     };
 
     var idx = 0;
-    setTimeout(fireNext, 2000);
+    // Poll the page's ready beacon before firing the first tap. If the page
+    // never loads we abort — firing taps into the user's open app is the
+    // worst possible failure mode.
+    var readyBefore = null;
+    var pollStarted = Date.now();
+    fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
+      readyBefore = d.ready_at || 0;
+      pollReady();
+    });
+    function pollReady() {
+      fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
+        if (d.ready_at && d.ready_at !== readyBefore) {
+          status.textContent = 'Page loaded — settling 400ms before firing...';
+          setTimeout(fireNext, 400);
+          return;
+        }
+        if (Date.now() - pollStarted > 15000) {
+          status.style.color = '#d80000';
+          status.textContent = 'Page never loaded on phone (15s timeout). NO taps fired. Is Chrome the default browser?';
+          closeBtn.textContent = 'Close';
+          state.onCalibrationReport = null;
+          state.calibratingFull = false;
+          return;
+        }
+        setTimeout(pollReady, 300);
+      }).catch(function() { setTimeout(pollReady, 500); });
+    }
 
     function fireNext() {
       if (idx >= positions.length) {

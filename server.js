@@ -203,6 +203,19 @@ app.get('/calibrate-target/reports', (req, res) => {
   res.json({ reports: CALIB_REPORTS.slice(-50) });
 });
 
+// Ready beacon — the calibration page POSTs here when it has loaded and is
+// listening for touches. The orchestrator polls this timestamp to know when
+// it's safe to start firing taps. Without this, taps fire into whatever
+// app was open before Chrome navigated to /calibrate-target.
+let calibReadyAt = 0;
+app.post('/calibrate-target/ready', (req, res) => {
+  calibReadyAt = Date.now();
+  res.json({ ok: true, t: calibReadyAt });
+});
+app.get('/calibrate-target/ready', (req, res) => {
+  res.json({ ready_at: calibReadyAt, age_ms: calibReadyAt ? Date.now() - calibReadyAt : null });
+});
+
 // One-shot calibration orchestrator. AI agents call this to verify click
 // accuracy before driving the phone. Opens the target page on the phone,
 // fires 9 taps at known coords, waits for reports, returns drift summary.
@@ -210,8 +223,28 @@ app.get('/calibrate-target/reports', (req, res) => {
 // incomplete (<half reports).
 app.post('/calibrate/start', async (req, res) => {
   try {
-    const base = 'http://127.0.0.1:' + (process.env.HUMANAIE_PORT || process.env.PORT || '3333');
-    const status = await fetch(base + '/android/status').then(r => r.json()).catch(() => null);
+    const port = process.env.HUMANAIE_PORT || process.env.PORT || '3333';
+    // Self-fetches use loopback (fast, no DNS).
+    const loopback = 'http://127.0.0.1:' + port;
+    // The URL we hand the PHONE must be reachable from the phone — loopback
+    // would resolve to the phone itself. Prefer an explicit override, else
+    // the Host header from the caller (works when called from the LAN UI),
+    // else autodetect the first non-loopback IPv4 interface.
+    const explicit = process.env.HUMANAIE_LAN_HOST;
+    const fromHeader = req.headers.host && !/^(127\.|localhost|::1|\[?::1\]?)/.test(req.headers.host) ? req.headers.host : null;
+    let lanHost = explicit || fromHeader;
+    if (!lanHost) {
+      const ifaces = require('os').networkInterfaces();
+      outer: for (const name of Object.keys(ifaces)) {
+        for (const i of ifaces[name]) {
+          if (i.family === 'IPv4' && !i.internal) { lanHost = i.address + ':' + port; break outer; }
+        }
+      }
+    }
+    if (!lanHost) return res.status(500).json({ error: 'could not determine LAN host (set HUMANAIE_LAN_HOST)' });
+    const phoneTargetUrl = 'http://' + lanHost + '/calibrate-target';
+
+    const status = await fetch(loopback + '/android/status').then(r => r.json()).catch(() => null);
     if (!status || !status.screen_w || !status.screen_h) {
       return res.status(503).json({ error: 'phone not connected (no screen_w/h)' });
     }
@@ -223,13 +256,29 @@ app.post('/calibrate/start', async (req, res) => {
       }
     }
     CALIB_REPORTS.length = 0;
+    // Snapshot ready timestamp BEFORE opening so we can detect a fresh beacon.
+    const readyBefore = calibReadyAt;
     try {
-      await fetch(base + '/android/open-url', {
+      await fetch(loopback + '/android/open-url', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: base + '/calibrate-target' }),
+        body: JSON.stringify({ url: phoneTargetUrl }),
       });
     } catch {}
-    await new Promise(r => setTimeout(r, 2500));  // page load
+    // Wait up to 12s for the page to POST its ready beacon. Abort if
+    // it never arrives — firing taps into the user's open app is the
+    // worst possible failure mode.
+    const readyDeadline = Date.now() + 12000;
+    while (calibReadyAt === readyBefore && Date.now() < readyDeadline) {
+      await new Promise(r => setTimeout(r, 250));
+    }
+    if (calibReadyAt === readyBefore) {
+      return res.status(503).json({
+        error: 'calibration page never loaded on phone — check the LAN URL and that Chrome is the default browser. NO taps were fired.',
+        target_url: phoneTargetUrl,
+      });
+    }
+    // Brief settle so the page's touch listeners are fully attached.
+    await new Promise(r => setTimeout(r, 400));
     for (const p of positions) {
       try {
         await fetch(base + '/android/tap', {
