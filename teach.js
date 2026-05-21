@@ -224,7 +224,7 @@ function listWorkflows({ package: pkgFilter, activity: actFilter } = {}) {
         const wfPath = path.join(actPath, slug, 'workflow.json');
         if (!fs.existsSync(wfPath)) continue;
         try {
-          const wf = JSON.parse(fs.readFileSync(wfPath, 'utf-8'));
+          const wf = withDefaults(JSON.parse(fs.readFileSync(wfPath, 'utf-8')));
           if (pkgFilter && wf.package !== pkgFilter) continue;
           if (actFilter && wf.activity !== actFilter) continue;
           out.push(wf);
@@ -234,6 +234,17 @@ function listWorkflows({ package: pkgFilter, activity: actFilter } = {}) {
   }
   out.sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
   return out;
+}
+
+function withDefaults(wf) {
+  if (!wf) return wf;
+  return Object.assign({}, wf, {
+    status:        wf.status        ?? 'approved',
+    intent:        wf.intent        ?? wf.name ?? '',
+    source_kind:   wf.source_kind   ?? 'human-promoted',
+    success_count: wf.success_count ?? 0,
+    rejected_reason: wf.rejected_reason ?? null,
+  });
 }
 
 function readWorkflow(id) {
@@ -440,4 +451,5 @@ module.exports = {
   slugify, workflowDir, workflowPathById, writeWorkflowJson,
   promoteSessionToWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
   matchIntent,
+  withDefaults,
 };

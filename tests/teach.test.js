@@ -317,6 +317,26 @@ test('matchIntent 0.4 floor does not outscore a single-token partial match', () 
   assert.strictEqual(teach.matchIntent(wf, 'send'), 0.9);
 });
 
+test('readWorkflow defaults P1-era missing fields (status, intent, source_kind, success_count)', () => {
+  const wfDir = tmpDir();
+  teach.configureWorkflows({ rootDir: wfDir });
+  // Write a P1-era workflow.json with only the original fields
+  const pkgDir  = path.join(wfDir, 'com-foo', 'a', 'oldflow');
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, 'workflow.json'), JSON.stringify({
+    id: 'wf-old', name: 'Old flow', package: 'com.foo', activity: 'a',
+    screen_w: 1080, screen_h: 2340, steps: [], created_at: 1000, updated_at: 1000,
+    source: 'session-x', use_count: 0,
+  }));
+  const wf = teach.readWorkflow('wf-old');
+  assert.ok(wf);
+  assert.strictEqual(wf.status, 'approved');         // human-promoted in P1 → implicit approval
+  assert.strictEqual(wf.intent, 'Old flow');         // defaults to name
+  assert.strictEqual(wf.source_kind, 'human-promoted');
+  assert.strictEqual(wf.success_count, 0);
+  assert.strictEqual(wf.rejected_reason, null);
+});
+
 test('PATCH /teach/sessions/:id/steps round-trip', async (t) => {
   const { spawn } = require('node:child_process');
   const path = require('node:path');
