@@ -3,7 +3,7 @@
 **Human AI Eyes** (pronounced "Human Eye") — a shared browser for human-AI collaboration.
 
 <!-- badges -->
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-18%2B-brightgreen)
 
@@ -117,14 +117,27 @@ AI Agent <--> REST API <--> HumanAIE Server <--> Headless Browser
 **Android Device (HANDROID)**
 - Drive a paired Android phone via the 📱 HANDROID tab (requires `adb` + USB or WiFi pairing)
 - Live phone screen streamed via h264 (when supported) with screencap fallback
+- Side-panel buttons: 🔓 unlock (wake + dismiss keyguard), ♻️ reboot (two-click safety), live FPS readout colored by health
+- First tap on the viewport when screen is off wakes the phone — no banner overlay
 - Viewport tap = phone tap; drag = swipe; hold-then-drag = drag-and-hold (rearrange icons)
 - Visual drag overlay shows start point + direction + gesture type (green=swipe / orange=drag-hold)
-- Sleep banner: tap to wake AND dismiss keyguard in one action
 - App launcher with favorites stored server-side (apps.json) — pick from phone's installed apps
 - Splash screen surfaces live phone status (resolution, battery, foreground app) + quick-launch grid
-- Calibration mode: fires 9 known-coord taps with labeled visual markers to verify coord pipeline
-- Coordinate grid overlay for precise tap targeting
 - Real phone screen dims pulled from `wm size` so taps/swipes map correctly when stream is downscaled
+- Watchdog: after 3 consecutive 5-min h264 backoff cycles, surfaces a "screenrecord wedged" banner with one-click reboot
+
+**End-to-End Click Calibration (P3.1)**
+- 📐 Calibrate button opens a target page on the phone (Chrome), fires 9 known taps, and the page reports actual touch coords back
+- Drift shown live per dot; verdict ✅ accurate / ⚠ minor offset / ❌ misaligned with avg + max pixel error
+- Built-in aim trainer mode: 8 random bullseyes, tap them in order, scored on accuracy + time + drift (same surface AI agents use to benchmark their own pipeline)
+
+**Teaching Mode (P1 → P3 → P4)**
+- Every `/android/tap` and `/android/swipe` auto-captures into a session (steps + per-step screenshots)
+- Promote a successful session → named workflow tied to (package, activity)
+- AI queries `/flows?intent=` to find a matching skill and replays its steps in one shot
+- AI can `/propose` brand-new flows, `/flag` ones that drifted, `/propose-edit` precise step amendments
+- Human approves/rejects in the 📂 Flows tab (per-app grouping, inline diff view for proposed edits)
+- `/flows/catalog?package=` returns the AI a digest of all skills for an app sorted by flagged → success_rate → recency
 
 ---
 
@@ -253,6 +266,52 @@ Android endpoints are mounted when ADB is available on the server. Set `HUMANAIE
 | POST | `/android/pull` | `{remote, local}` | Pull file from device |
 | POST | `/android/record` | `{seconds}` | Record screen, returns MP4 path |
 | POST | `/android/config` | `{captureIntervalMs}` | Tune screencap fallback cadence (16-2000ms) |
+| POST | `/android/open-url` | `{url}` | Launch URL in phone's Chrome via ACTION_VIEW intent (whitelisted to http/https only) |
+| POST | `/android/reboot` | -- | Reboot the phone (~30-45s offline; reconnect loop picks it back up) |
+| POST | `/android/reconnect` | -- | Re-run `adb connect <PHONE_IP>` and refresh device state |
+
+### Teaching Mode — Sessions + Workflows + Flows (P1 → P4)
+
+Sessions are captured automatically from every `/android/tap` and `/android/swipe`.
+Workflows are sessions promoted to a named, reusable skill keyed by `(package, activity)`.
+"Flows" is the query layer AI agents use to discover and replay skills.
+
+| Method | Endpoint | Body | Description |
+|--------|----------|------|-------------|
+| GET | `/teach/sessions` | `?package=&activity=` | List recent sessions (most recent first) |
+| GET | `/teach/sessions/:id` | -- | Full session detail (steps + per-step screenshots) |
+| POST | `/teach/done` | -- | Mark active session done (success); bumps replayed workflow's `success_count` |
+| POST | `/teach/cancel` | -- | Discard active session |
+| POST | `/teach/sessions/:id/promote` | `{name}` | Promote a human session to an `approved` workflow |
+| POST | `/teach/sessions/:id/propose` | `{name, intent}` | AI auto-proposes a successful session as a `proposed` workflow |
+| PATCH | `/teach/sessions/:id/steps` | `{steps}` | Edit captured steps (label, anchor) |
+| GET | `/workflows` | `?package=&activity=&status=` | List workflows (status filter: `approved`/`proposed`/`rejected`/`proposed-edit`) |
+| GET | `/workflows/:id` | -- | Single workflow detail |
+| PATCH | `/workflows/:id` | `{name, ...}` | Edit workflow metadata |
+| PATCH | `/workflows/:id/status` | `{status, rejected_reason?}` | Approve / reject / un-reject. On `proposed-edit`: approve merges into parent, reject deletes sibling |
+| DELETE | `/workflows/:id` | -- | Delete workflow + on-disk files |
+| POST | `/workflows/:id/flag` | `{reason}` | AI marks a flow as drifted (⚠ badge in UI) |
+| POST | `/workflows/:id/unflag` | -- | Human clears flag |
+| POST | `/workflows/:id/propose-edit` | `{steps, edit_reason}` | AI proposes an amended step array (sibling workflow). 409 if pending edit exists. |
+| GET | `/flows` | `?package=&activity=&intent=&min_status=approved` | Fuzzy-match the best workflow for an intent. Returns `{workflow, confidence}` or null. Bumps `use_count` on hit. |
+| GET | `/flows/catalog` | `?package=&activity=` | Per-app skill digest: counts + per-skill `{intent, success_rate, flagged, has_pending_edit}`. Sorted flagged-first → success_rate → recency. |
+
+### Calibration (P3.1)
+
+End-to-end click accuracy verification: the page reports actual touch coords back to the server so drift can be measured directly.
+
+| Method | Endpoint | Body | Description |
+|--------|----------|------|-------------|
+| GET | `/calibrate-target` | -- | Mobile-optimized HTML page opened in phone's Chrome |
+| POST | `/calibrate-target/report` | `{clientX, clientY, phoneX, phoneY, dpr, innerW, innerH, screenW, screenH, t}` | Page POSTs each touch back; broadcast via SSE as `CalibrationReport` |
+| GET | `/calibrate-target/reports` | -- | Last 50 reports (ring buffer) |
+| POST | `/calibrate-target/ready` | `{innerW, innerH, screenW, screenH, dpr, topOffsetCssPx, leftOffsetCssPx}` | Page fires this when ready (after fullscreen activates) |
+| GET | `/calibrate-target/ready` | -- | `{ready_at, age_ms, dims}` — orchestrator polls this before firing taps |
+| POST | `/calibrate-target/clear` | -- | Bump tick; page wipes accumulated dots |
+| GET | `/calibrate-target/clear-tick` | -- | Page polls this to detect clear signal |
+| POST | `/calibrate-target/aim-result` | `{N, hits, misses, totalSeconds, avgDriftPhonePx, details}` | Aim trainer submits final score; broadcast as `AimTrainer` SSE event |
+| GET | `/calibrate-target/aim-result` | -- | Last aim trainer result |
+| POST | `/calibrate/start` | -- | One-shot orchestrator (AI-callable): opens page on phone, fires 9 taps, returns `{captured, total, avg_err_px, max_err_px, verdict, pairs}` |
 
 ---
 
