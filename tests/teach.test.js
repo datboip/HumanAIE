@@ -490,6 +490,16 @@ test('PATCH /workflows/:id/status accepts approved/proposed/rejected', async (t)
   assert.strictEqual(rejectedBody.workflow.status, 'rejected');
   assert.strictEqual(rejectedBody.workflow.rejected_reason, 'flow is wrong');
 
+  // Re-approve clears the previously stored rejected_reason
+  const reapproved = await fetch('http://127.0.0.1:13342/workflows/' + wfId + '/status', {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'approved' }),
+  });
+  assert.strictEqual(reapproved.status, 200);
+  const reapprovedBody = await reapproved.json();
+  assert.strictEqual(reapprovedBody.workflow.status, 'approved');
+  assert.strictEqual(reapprovedBody.workflow.rejected_reason, null);
+
   // Invalid status
   const bad = await fetch('http://127.0.0.1:13342/workflows/' + wfId + '/status', {
     method: 'PATCH', headers: { 'content-type': 'application/json' },

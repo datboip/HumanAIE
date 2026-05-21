@@ -483,15 +483,19 @@ router.patch('/workflows/:id', (req, res) => {
 router.patch('/workflows/:id/status', (req, res) => {
   if (!isSafeId(req.params.id)) return res.status(400).end();
   const status = req.body && req.body.status;
+  // 'proposed' is a valid target — the un-reject UI flow moves rejected workflows
+  // back to proposed for human re-review.
   if (status !== 'proposed' && status !== 'approved' && status !== 'rejected') {
     return res.status(400).json({ error: 'status must be proposed/approved/rejected' });
   }
   const wf = readWorkflow(req.params.id);
   if (!wf) return res.status(404).json({ error: 'not found' });
   wf.status = status;
+  // Reason clears whenever we move OFF rejected, so subsequent reads see a clean slate.
   wf.rejected_reason = (status === 'rejected') ? (req.body.rejected_reason || null) : null;
   wf.updated_at = Date.now();
   const wfPath = workflowPathById(req.params.id);
+  // Guard against race with concurrent DELETE — readWorkflow succeeded but the dir was removed before we could resolve the path.
   if (!wfPath) return res.status(500).json({ error: 'cannot resolve workflow path' });
   writeWorkflowJson(wfPath, wf);
   res.json({ ok: true, workflow: wf });
