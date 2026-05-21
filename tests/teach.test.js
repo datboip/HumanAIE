@@ -548,3 +548,119 @@ test('GET /workflows?status=proposed returns only proposed workflows', async (t)
   assert.strictEqual(proposed.length, 1);
   assert.strictEqual(proposed[0].id, 'wf-pr');
 });
+
+test('GET /flows returns workflow:null when no candidates', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13344', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  const res = await fetch('http://127.0.0.1:13344/flows?package=com.nothing&intent=anything').then(r => r.json());
+  assert.strictEqual(res.workflow, null);
+  assert.strictEqual(res.reason, 'no candidates');
+});
+
+test('GET /flows returns top match above threshold', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13345', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // Seed two approved workflows
+  const baseDir = path.join(dataDir, 'workflows', 'com-test', 'a');
+  fs.mkdirSync(path.join(baseDir, 'post'), { recursive: true });
+  fs.writeFileSync(path.join(baseDir, 'post', 'workflow.json'), JSON.stringify({
+    id: 'wf-post', name: 'Post a photo', intent: 'post a photo to feed',
+    status: 'approved', source_kind: 'human-promoted',
+    package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
+    steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
+    success_count: 5, rejected_reason: null,
+  }));
+  fs.mkdirSync(path.join(baseDir, 'dm'), { recursive: true });
+  fs.writeFileSync(path.join(baseDir, 'dm', 'workflow.json'), JSON.stringify({
+    id: 'wf-dm', name: 'Send DM', intent: 'send a direct message',
+    status: 'approved', source_kind: 'human-promoted',
+    package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
+    steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
+    success_count: 0, rejected_reason: null,
+  }));
+
+  const res = await fetch('http://127.0.0.1:13345/flows?package=com.test&intent=post%20a%20photo').then(r => r.json());
+  assert.ok(res.workflow);
+  assert.strictEqual(res.workflow.id, 'wf-post');
+  assert.ok(res.confidence >= 0.9);
+  // use_count was 0 in the seed; /flows return should have bumped it to 1
+  assert.strictEqual(res.workflow.use_count, 1);
+
+  // Calling /flows again should bump use_count to 2
+  const res2 = await fetch('http://127.0.0.1:13345/flows?package=com.test&intent=post%20a%20photo').then(r => r.json());
+  assert.strictEqual(res2.workflow.use_count, 2);
+});
+
+test('GET /flows returns workflow:null when only proposed workflows exist (default min_status=approved)', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13346', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  const dir = path.join(dataDir, 'workflows', 'com-test', 'a', 'proposed-only');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'workflow.json'), JSON.stringify({
+    id: 'wf-prop', name: 'Send DM', intent: 'send dm',
+    status: 'proposed', source_kind: 'agent-proposed',
+    package: 'com.test', activity: 'a', screen_w: 1080, screen_h: 2340,
+    steps: [], created_at: 1000, updated_at: 1000, source: 's', use_count: 0,
+    success_count: 0, rejected_reason: null,
+  }));
+
+  // Default min_status=approved should filter it out
+  const def = await fetch('http://127.0.0.1:13346/flows?package=com.test&intent=send%20dm').then(r => r.json());
+  assert.strictEqual(def.workflow, null);
+
+  // min_status=proposed should return it
+  const prop = await fetch('http://127.0.0.1:13346/flows?package=com.test&intent=send%20dm&min_status=proposed').then(r => r.json());
+  assert.ok(prop.workflow);
+  assert.strictEqual(prop.workflow.id, 'wf-prop');
+});

@@ -446,6 +446,41 @@ router.post('/teach/sessions/:id/propose', (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+router.get('/flows', (req, res) => {
+  const minStatus = req.query.min_status || 'approved';
+  const candidates = listWorkflows({
+    package: req.query.package,
+    activity: req.query.activity,
+    status: minStatus,
+  });
+  if (candidates.length === 0) {
+    return res.json({ workflow: null, reason: 'no candidates' });
+  }
+  const ranked = candidates.map(w => ({ w, score: matchIntent(w, req.query.intent) }))
+                            .sort((a, b) => {
+                              if (b.score !== a.score) return b.score - a.score;
+                              // Tiebreaker: higher success_count wins, then most recent
+                              if ((b.w.success_count || 0) !== (a.w.success_count || 0)) {
+                                return (b.w.success_count || 0) - (a.w.success_count || 0);
+                              }
+                              return (b.w.updated_at || 0) - (a.w.updated_at || 0);
+                            });
+  const best = ranked[0];
+  if (best.score < 0.4) {
+    return res.json({ workflow: null, reason: 'low confidence', confidence: best.score });
+  }
+  // Bump use_count: this is the "attempt" signal — AI fetched the flow
+  // intending to replay it. success_count is bumped separately by
+  // endActive() on /teach/done if the replay actually completes.
+  try {
+    best.w.use_count = (best.w.use_count || 0) + 1;
+    best.w.updated_at = Date.now();
+    const wfPath = workflowPathById(best.w.id);
+    if (wfPath) writeWorkflowJson(wfPath, best.w);
+  } catch {}
+  res.json({ workflow: best.w, confidence: best.score });
+});
+
 router.get('/workflows', (req, res) => {
   res.json(listWorkflows({
     package: req.query.package,
