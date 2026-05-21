@@ -1007,7 +1007,7 @@
     <div id="splash">
       <h1>HumanAIE</h1>
       <div class="tagline">Human AI Eyes</div>
-      <div class="version ver-tag">v1.4.0</div>
+      <div class="version ver-tag">v1.5.0</div>
 
       <div class="splash-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px;width:100%;max-width:640px">
         <!-- Status panel -->
@@ -1264,7 +1264,10 @@
             <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="reconnectPhone()">⟳ Reconnect ADB</button>
           </div>
           <div class="popup-row">
-            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateClicks()" title="Tests screen→phone coord mapping by asking you to tap 9 known target bullseyes">📐 Calibrate</button>
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateClicks()" title="Tests screen→phone coord mapping by asking you to tap 9 known target bullseyes">📐 Calibrate (click-the-dot)</button>
+          </div>
+          <div class="popup-row">
+            <button class="nav-btn" style="height:28px;font-size:11px;padding:0 8px;width:100%" onclick="calibrateFullSuite()" title="End-to-end: opens calibration page on phone, fires 9 server taps, shows real drift between fired and observed coords">📐 Full calibration (E2E)</button>
           </div>
         </div>
       </div>
@@ -1302,7 +1305,7 @@
   <!-- Status bar -->
   <div id="statusbar">
     <div class="sb-left" style="display:flex;align-items:center;gap:6px">
-      <span style="font-weight:bold;font-size:11px">HumanAIE <span class="ver-tag" style="font-weight:normal;opacity:0.7">v1.4.0</span></span>
+      <span style="font-weight:bold;font-size:11px">HumanAIE <span class="ver-tag" style="font-weight:normal;opacity:0.7">v1.5.0</span></span>
       <div id="status-dot" style="width:8px;height:8px;border-radius:50%;background:#c00;flex-shrink:0"></div>
       <span id="status-text" style="font-size:11px;flex:1">Loading...</span>
     </div>
@@ -1345,6 +1348,8 @@
     waitforNotified: false,
     showCursor: true,
     calibratingClicks: false,
+    calibratingFull: false,
+    onCalibrationReport: null,
     // Per-source visualization toggles, controlled by side-panel switches.
     showHumanHistory: true,
     showAiHistory: true,
@@ -2583,6 +2588,142 @@
     overlay.appendChild(panel);
   }
 
+  // Full end-to-end calibration. Opens /calibrate-target on the phone via
+  // ADB intent, fires 9 server taps at known phone coords, and listens for
+  // CalibrationReport SSE events from the phone-side page. The drift between
+  // fired vs observed coord is shown live in a side panel.
+  window.calibrateFullSuite = function() {
+    if (!androidMode) { alert('Calibration only works in HANDROID mode.'); return; }
+    if (state.calibratingFull) return;
+    state.calibratingFull = true;
+
+    var positions = buildCalibrationGrid();
+    var targetUrl = location.protocol + '//' + location.host + '/calibrate-target';
+
+    if (!confirm('This will:\n  1. Open ' + targetUrl + ' in Chrome on the phone\n  2. Fire 9 taps at known phone coords\n  3. Show drift between fired vs observed coords\n\nMake sure the phone is unlocked. Continue?')) {
+      state.calibratingFull = false;
+      return;
+    }
+
+    fetch('/android/open-url', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: targetUrl }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Failed to open page on phone: ' + d.error); state.calibratingFull = false; return; }
+      runFullCalibration(positions);
+    }).catch(function(err) {
+      alert('Failed to open page on phone: ' + err);
+      state.calibratingFull = false;
+    });
+  };
+
+  function runFullCalibration(positions) {
+    var pending = positions.map(function(p) { return { target: p, observed: null }; });
+    var firedAt = -1;  // index of the most recently fired tap
+
+    var overlay = document.createElement('div');
+    overlay.id = 'calib-full-overlay';
+    overlay.style.cssText = 'position:fixed;right:16px;top:64px;width:340px;background:#0a0a0a;border:2px solid #6633cc;border-radius:6px;padding:12px;color:#fff;font-family:monospace;font-size:11px;z-index:120;box-shadow:0 4px 24px rgba(0,0,0,0.85)';
+
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'font-weight:bold;color:#cccc55;margin-bottom:8px;font-size:12px';
+    hdr.textContent = '📐 Full calibration (E2E)';
+    overlay.appendChild(hdr);
+
+    var status = document.createElement('div');
+    status.style.cssText = 'margin-bottom:8px;color:#888;font-size:11px';
+    status.textContent = 'Waiting 2s for phone Chrome to load page...';
+    overlay.appendChild(status);
+
+    var resultsList = document.createElement('div');
+    overlay.appendChild(resultsList);
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'margin-top:12px;display:flex;gap:6px';
+    var closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'flex:1;padding:6px;background:transparent;color:#888;border:1px solid #444;border-radius:3px;cursor:pointer;font-family:inherit';
+    closeBtn.textContent = 'Cancel';
+    closeBtn.addEventListener('click', function() {
+      overlay.remove();
+      state.onCalibrationReport = null;
+      state.calibratingFull = false;
+    });
+    btnRow.appendChild(closeBtn);
+    overlay.appendChild(btnRow);
+
+    document.body.appendChild(overlay);
+
+    function renderRow(pos) {
+      var row = document.createElement('div');
+      var color = '#888';
+      var detail = '— waiting';
+      if (pos.observed) {
+        var dx = pos.observed.x - pos.target.px;
+        var dy = pos.observed.y - pos.target.py;
+        var err = Math.hypot(dx, dy);
+        color = err < 5 ? '#3ddc84' : err < 30 ? '#cccc55' : '#d80000';
+        detail = '(' + Math.round(pos.observed.x) + ',' + Math.round(pos.observed.y) + ')  Δ ' + (dx >= 0 ? '+' : '') + Math.round(dx) + ',' + (dy >= 0 ? '+' : '') + Math.round(dy) + '  · ' + err.toFixed(1) + 'px';
+      }
+      row.style.cssText = 'color:' + color + ';padding:2px 0;font-size:11px';
+      row.dataset.label = pos.target.label;
+      row.textContent = pos.target.label + ' → (' + pos.target.px + ',' + pos.target.py + ') ' + detail;
+      var existing = resultsList.querySelector('[data-label="' + pos.target.label + '"]');
+      if (existing) existing.replaceWith(row);
+      else resultsList.appendChild(row);
+    }
+    pending.forEach(renderRow);
+
+    // Hook into the global SSE handler.
+    state.onCalibrationReport = function(data) {
+      if (firedAt < 0) return;  // before any tap fired
+      var pos = pending[firedAt];
+      if (!pos || pos.observed) return;  // already captured
+      pos.observed = { x: data.phoneX, y: data.phoneY };
+      renderRow(pos);
+    };
+
+    var idx = 0;
+    setTimeout(fireNext, 2000);
+
+    function fireNext() {
+      if (idx >= positions.length) {
+        // Wait 1.2s for trailing report, then summarize.
+        setTimeout(function() {
+          var done = pending.filter(function(p) { return p.observed; });
+          var summary = document.createElement('div');
+          summary.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px';
+          if (done.length === 0) {
+            summary.style.color = '#d80000';
+            summary.textContent = '0/' + positions.length + ' reports received — did the page open?';
+          } else {
+            var errs = done.map(function(p) { return Math.hypot(p.observed.x - p.target.px, p.observed.y - p.target.py); });
+            var avgErr = errs.reduce(function(s, e) { return s + e; }, 0) / errs.length;
+            var maxErr = errs.reduce(function(m, e) { return e > m ? e : m; }, 0);
+            var verdict = avgErr < 5 ? '✅ accurate' : avgErr < 30 ? '⚠ minor offset' : '❌ misaligned';
+            summary.style.color = avgErr < 5 ? '#3ddc84' : avgErr < 30 ? '#cccc55' : '#d80000';
+            summary.style.fontWeight = 'bold';
+            summary.textContent = done.length + '/' + positions.length + ' · avg ' + avgErr.toFixed(1) + 'px · max ' + maxErr.toFixed(1) + 'px · ' + verdict;
+          }
+          overlay.insertBefore(summary, btnRow);
+          status.textContent = 'Done';
+          closeBtn.textContent = 'Close';
+          state.onCalibrationReport = null;
+          state.calibratingFull = false;
+        }, 1200);
+        return;
+      }
+      var p = positions[idx];
+      status.textContent = 'Firing tap ' + (idx + 1) + '/' + positions.length + ' at (' + p.px + ',' + p.py + ')';
+      firedAt = idx;
+      idx++;
+      fetch('/android/tap', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ x: p.px, y: p.py, source: 'human' }),
+      }).catch(function() {});
+      setTimeout(fireNext, 800);
+    }
+  }
+
   window.phoneScreenshot = function() {
     // Open in a new tab — user can right-click → Save As.
     window.open('/android/screenshot?t=' + Date.now(), '_blank');
@@ -3186,6 +3327,11 @@
             ghost: data.source === 'human',
             updateCursor: data.source === 'agent-phone',
           });
+        }
+        // Calibration report — the phone's calibration target page POSTed a
+        // touch coord. Hand it to whoever is currently running calibration.
+        if (data.type === 'CalibrationReport' && typeof state.onCalibrationReport === 'function') {
+          state.onCalibrationReport(data);
         }
       } catch(err) {}
     };
