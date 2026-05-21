@@ -310,6 +310,47 @@ function promoteSessionToWorkflow(sessionId, { name }) {
   return wf;
 }
 
+function proposeSessionAsWorkflow(sessionId, { name, intent }) {
+  // Same on-disk shape as promote but with proposed status — used by AI
+  // agents auto-saving successful sessions for human review.
+  if (!teachRoot || !workflowsRoot) throw new Error('teach/workflows not configured');
+  const session = readSession(teachRoot, sessionId);
+  if (!session) throw new Error('session not found');
+  const slug = slugify(name);
+  let finalSlug = slug, n = 2;
+  while (fs.existsSync(workflowDir(session.package, session.activity, finalSlug))) {
+    finalSlug = slug + '-' + n++;
+  }
+  const dir = workflowDir(session.package, session.activity, finalSlug);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const step of session.steps) {
+    if (!step.screenshot) continue;
+    const src = path.join(teachRoot, sessionId, step.screenshot);
+    const dst = path.join(dir, step.screenshot);
+    try { fs.copyFileSync(src, dst); } catch {}
+  }
+  const wf = {
+    id: 'wf-' + Date.now(),
+    name: String(name || 'Untitled'),
+    intent: String(intent || name || ''),
+    status: 'proposed',
+    source_kind: 'agent-proposed',
+    package: session.package,
+    activity: session.activity,
+    screen_w: session.screen_w,
+    screen_h: session.screen_h,
+    steps: session.steps,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+    source: sessionId,
+    use_count: 0,
+    success_count: 0,
+    rejected_reason: null,
+  };
+  writeWorkflowJson(path.join(dir, 'workflow.json'), wf);
+  return wf;
+}
+
 // ── Intent matching (P3 /flows) ─────────────────────────────────────────────
 // Scores how well a workflow matches a free-text intent query. Pure function;
 // no I/O. See spec 2026-05-20 § matchIntent for threshold rationale.
@@ -393,6 +434,17 @@ router.post('/teach/sessions/:id/promote', (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+router.post('/teach/sessions/:id/propose', (req, res) => {
+  if (!isSafeId(req.params.id)) return res.status(400).end();
+  const name = req.body && req.body.name;
+  const intent = req.body && req.body.intent;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const wf = proposeSessionAsWorkflow(req.params.id, { name, intent });
+    res.json({ ok: true, workflow: wf });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 router.get('/workflows', (req, res) => {
   res.json(listWorkflows({ package: req.query.package, activity: req.query.activity }));
 });
@@ -454,7 +506,7 @@ module.exports = {
   IDLE_MS,
   router,
   slugify, workflowDir, workflowPathById, writeWorkflowJson,
-  promoteSessionToWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
+  promoteSessionToWorkflow, proposeSessionAsWorkflow, listWorkflows, readWorkflow, deleteWorkflow,
   matchIntent,
   withDefaults,
 };

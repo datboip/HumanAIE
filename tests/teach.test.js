@@ -396,3 +396,45 @@ test('promoteSessionToWorkflow writes status:approved and source_kind:human-prom
   const loaded = teach.readWorkflow(wf.id);
   assert.strictEqual(loaded.status, 'approved');
 });
+
+test('POST /teach/sessions/:id/propose creates a proposed workflow', async (t) => {
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+  const dataDir = tmpDir();
+  const proc = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, HUMANAIE_TEST_NO_BROWSER: '1', HUMANAIE_PORT: '13341', HUMANAIE_DATA_DIR: dataDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(() => { try { proc.kill('SIGTERM'); } catch {} });
+
+  const ready = await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 5000);
+    proc.stdout.on('data', (chunk) => {
+      if (chunk.toString().toLowerCase().includes('listening')) {
+        clearTimeout(timer); resolve(true);
+      }
+    });
+  });
+  assert.ok(ready);
+
+  // Manually create a session on disk (avoids needing /android/* in tests)
+  const teachDir = path.join(dataDir, 'humanaie-sessions');
+  const sid = 'teach-9999';
+  fs.mkdirSync(path.join(teachDir, sid), { recursive: true });
+  fs.writeFileSync(path.join(teachDir, sid, 'meta.json'), JSON.stringify({
+    id: sid, package: 'com.test', activity: '.A', screen_w: 1080, screen_h: 2340,
+    started_at: 1000, ended_at: 2000, end_reason: 'done', steps_count: 0,
+  }));
+  fs.writeFileSync(path.join(teachDir, sid, 'steps.jsonl'), '');
+
+  const res = await fetch('http://127.0.0.1:13341/teach/sessions/' + sid + '/propose', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Test proposal', intent: 'test the propose endpoint' }),
+  });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.workflow);
+  assert.strictEqual(body.workflow.status, 'proposed');
+  assert.strictEqual(body.workflow.source_kind, 'agent-proposed');
+  assert.strictEqual(body.workflow.intent, 'test the propose endpoint');
+});
