@@ -2588,71 +2588,181 @@
     overlay.appendChild(panel);
   }
 
-  // Full end-to-end calibration. Opens /calibrate-target on the phone via
-  // ADB intent, fires 9 server taps at known phone coords, and listens for
-  // CalibrationReport SSE events from the phone-side page. The drift between
-  // fired vs observed coord is shown live in a side panel.
+  // Full end-to-end calibration. Manual 2-step flow:
+  //  1. User opens /calibrate-target on the phone (in Chrome) and taps the
+  //     fullscreen button on the page. The page POSTs a ready beacon.
+  //  2. Cam UI's panel detects the beacon, enables the "Start" button.
+  //     User clicks Start → 9 taps fire and live drift appears.
+  // The panel is draggable by its purple header bar.
   window.calibrateFullSuite = function() {
     if (!androidMode) { alert('Calibration only works in HANDROID mode.'); return; }
     if (state.calibratingFull) return;
     state.calibratingFull = true;
-
-    var positions = buildCalibrationGrid();
-    var targetUrl = location.protocol + '//' + location.host + '/calibrate-target';
-
-    if (!confirm('This will:\n  1. Open ' + targetUrl + ' in Chrome on the phone\n  2. Fire 9 taps at known phone coords\n  3. Show drift between fired vs observed coords\n\nMake sure the phone is unlocked. Continue?')) {
-      state.calibratingFull = false;
-      return;
-    }
-
-    fetch('/android/open-url', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: targetUrl }),
-    }).then(function(r) { return r.json(); }).then(function(d) {
-      if (d.error) { alert('Failed to open page on phone: ' + d.error); state.calibratingFull = false; return; }
-      runFullCalibration(positions);
-    }).catch(function(err) {
-      alert('Failed to open page on phone: ' + err);
-      state.calibratingFull = false;
-    });
+    openCalibrationPanel(buildCalibrationGrid());
   };
 
-  function runFullCalibration(positions) {
-    var pending = positions.map(function(p) { return { target: p, observed: null }; });
-    var firedAt = -1;  // index of the most recently fired tap
+  // Best-effort auto-open helper — also exposed so users can click the
+  // "Auto-open in Chrome" button on the panel if they don't want to type
+  // the URL on the phone manually.
+  function tryAutoOpenCalibration() {
+    var url = location.protocol + '//' + location.host + '/calibrate-target';
+    return fetch('/android/open-url', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: url }),
+    }).then(function(r) { return r.json(); });
+  }
 
+  function openCalibrationPanel(positions) {
+    var pending = positions.map(function(p) { return { target: p, observed: null }; });
+    var firedAt = -1;
+    var targetUrl = location.protocol + '//' + location.host + '/calibrate-target';
+
+    // ---- Draggable panel ---------------------------------------------------
     var overlay = document.createElement('div');
     overlay.id = 'calib-full-overlay';
-    overlay.style.cssText = 'position:fixed;right:16px;top:64px;width:340px;background:#0a0a0a;border:2px solid #6633cc;border-radius:6px;padding:12px;color:#fff;font-family:monospace;font-size:11px;z-index:120;box-shadow:0 4px 24px rgba(0,0,0,0.85)';
+    overlay.style.cssText = 'position:fixed;right:16px;top:64px;width:360px;background:#0a0a0a;border:2px solid #6633cc;border-radius:6px;color:#fff;font-family:monospace;font-size:11px;z-index:120;box-shadow:0 4px 24px rgba(0,0,0,0.85);user-select:none';
 
-    var hdr = document.createElement('div');
-    hdr.style.cssText = 'font-weight:bold;color:#cccc55;margin-bottom:8px;font-size:12px';
-    hdr.textContent = '📐 Full calibration (E2E)';
-    overlay.appendChild(hdr);
+    var headerBar = document.createElement('div');
+    headerBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;background:#6633cc;color:#fff;padding:6px 10px;border-radius:4px 4px 0 0;cursor:move;font-size:12px;font-weight:bold';
+    headerBar.innerHTML = '';  // populated via DOM API
+    var hdrTitle = document.createElement('span');
+    hdrTitle.textContent = '📐 Calibration  ⋮⋮';
+    headerBar.appendChild(hdrTitle);
+    var hdrClose = document.createElement('span');
+    hdrClose.textContent = '✕';
+    hdrClose.style.cssText = 'cursor:pointer;padding:0 4px;font-weight:bold';
+    hdrClose.title = 'Close';
+    hdrClose.addEventListener('click', function(e) { e.stopPropagation(); teardown(); });
+    headerBar.appendChild(hdrClose);
+    overlay.appendChild(headerBar);
+
+    // Drag-by-header. Pointer events instead of mouse — works on touch too.
+    var drag = { active: false, startX: 0, startY: 0, baseLeft: 0, baseTop: 0 };
+    headerBar.addEventListener('pointerdown', function(e) {
+      drag.active = true;
+      var rect = overlay.getBoundingClientRect();
+      drag.startX = e.clientX; drag.startY = e.clientY;
+      drag.baseLeft = rect.left; drag.baseTop = rect.top;
+      // Switch from right/top to left/top anchoring so left tracks cleanly.
+      overlay.style.right = 'auto';
+      overlay.style.left = rect.left + 'px';
+      overlay.style.top  = rect.top + 'px';
+      headerBar.setPointerCapture(e.pointerId);
+    });
+    headerBar.addEventListener('pointermove', function(e) {
+      if (!drag.active) return;
+      var nx = drag.baseLeft + (e.clientX - drag.startX);
+      var ny = drag.baseTop  + (e.clientY - drag.startY);
+      // Clamp to viewport (allow a small overhang).
+      nx = Math.max(-20, Math.min(window.innerWidth - 60, nx));
+      ny = Math.max(0, Math.min(window.innerHeight - 40, ny));
+      overlay.style.left = nx + 'px';
+      overlay.style.top  = ny + 'px';
+    });
+    headerBar.addEventListener('pointerup', function(e) {
+      drag.active = false;
+      try { headerBar.releasePointerCapture(e.pointerId); } catch {}
+    });
+
+    // ---- Body --------------------------------------------------------------
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:10px 12px 12px 12px';
+    overlay.appendChild(body);
+
+    // Step 1: connection instructions + URL + auto-open button + ready indicator
+    var step1 = document.createElement('div');
+    var instr = document.createElement('div');
+    instr.style.cssText = 'color:#ccc;line-height:1.5;margin-bottom:8px';
+    instr.textContent = '1. On the phone, open Chrome and visit:';
+    step1.appendChild(instr);
+    var urlBox = document.createElement('div');
+    urlBox.style.cssText = 'background:#1a1a1a;border:1px solid #333;border-radius:3px;padding:6px 8px;color:#cccc55;font-size:11px;margin-bottom:6px;word-break:break-all;user-select:text;cursor:text';
+    urlBox.textContent = targetUrl;
+    step1.appendChild(urlBox);
+    var autoBtn = document.createElement('button');
+    autoBtn.style.cssText = 'width:100%;padding:6px;background:transparent;color:#888;border:1px solid #444;border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px;margin-bottom:6px';
+    autoBtn.textContent = '↗ Try auto-open in Chrome';
+    autoBtn.addEventListener('click', function() {
+      autoBtn.disabled = true; autoBtn.textContent = 'Opening...';
+      tryAutoOpenCalibration().then(function(d) {
+        if (d && d.error) { autoBtn.textContent = '↗ Auto-open failed: ' + d.error; autoBtn.disabled = false; }
+        else { autoBtn.textContent = '↗ Open command sent (check phone)'; }
+      }).catch(function() {
+        autoBtn.textContent = '↗ Auto-open failed (try manually)'; autoBtn.disabled = false;
+      });
+    });
+    step1.appendChild(autoBtn);
+    var instr2 = document.createElement('div');
+    instr2.style.cssText = 'color:#ccc;line-height:1.5;margin:8px 0 4px 0';
+    instr2.textContent = '2. On the page, tap ⛶ Fullscreen.';
+    step1.appendChild(instr2);
+    var instr3 = document.createElement('div');
+    instr3.style.cssText = 'color:#ccc;line-height:1.5;margin-bottom:8px';
+    instr3.textContent = '3. The button below lights up green when the phone is connected.';
+    step1.appendChild(instr3);
+    body.appendChild(step1);
+
+    // Ready indicator + Start button
+    var startBtn = document.createElement('button');
+    startBtn.style.cssText = 'width:100%;padding:10px;background:#333;color:#888;border:1px solid #444;border-radius:4px;cursor:not-allowed;font-family:inherit;font-size:12px;font-weight:bold;margin-top:6px';
+    startBtn.textContent = '⏳ Waiting for phone...';
+    startBtn.disabled = true;
+    body.appendChild(startBtn);
 
     var status = document.createElement('div');
-    status.style.cssText = 'margin-bottom:8px;color:#888;font-size:11px';
-    status.textContent = 'Waiting 2s for phone Chrome to load page...';
-    overlay.appendChild(status);
+    status.style.cssText = 'margin-top:10px;color:#666;font-size:10px;text-align:center';
+    status.textContent = '';
+    body.appendChild(status);
 
     var resultsList = document.createElement('div');
-    overlay.appendChild(resultsList);
-
-    var btnRow = document.createElement('div');
-    btnRow.style.cssText = 'margin-top:12px;display:flex;gap:6px';
-    var closeBtn = document.createElement('button');
-    closeBtn.style.cssText = 'flex:1;padding:6px;background:transparent;color:#888;border:1px solid #444;border-radius:3px;cursor:pointer;font-family:inherit';
-    closeBtn.textContent = 'Cancel';
-    closeBtn.addEventListener('click', function() {
-      overlay.remove();
-      state.onCalibrationReport = null;
-      state.calibratingFull = false;
-    });
-    btnRow.appendChild(closeBtn);
-    overlay.appendChild(btnRow);
+    resultsList.style.cssText = 'margin-top:10px';
+    body.appendChild(resultsList);
 
     document.body.appendChild(overlay);
 
+    function teardown() {
+      try { overlay.remove(); } catch {}
+      state.onCalibrationReport = null;
+      state.calibratingFull = false;
+    }
+
+    // ---- Ready polling -----------------------------------------------------
+    // Lock in the baseline ready_at so a fresh beacon after this moment
+    // is what counts as "phone connected for this session".
+    var readyBefore = null;
+    fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
+      readyBefore = d.ready_at || 0;
+      pollReady();
+    });
+    var armed = false;
+    function pollReady() {
+      if (!overlay.isConnected) return;
+      fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
+        if (!armed && d.ready_at && d.ready_at !== readyBefore) {
+          armed = true;
+          startBtn.disabled = false;
+          startBtn.style.background = '#0a3a18';
+          startBtn.style.color = '#3ddc84';
+          startBtn.style.borderColor = '#3ddc84';
+          startBtn.style.cursor = 'pointer';
+          startBtn.textContent = '▶ Start calibration (fires 9 taps)';
+          status.textContent = '✅ Phone connected · fullscreen active';
+          status.style.color = '#3ddc84';
+        }
+        setTimeout(pollReady, 700);
+      }).catch(function() { setTimeout(pollReady, 1000); });
+    }
+
+    startBtn.addEventListener('click', function() {
+      if (!armed || startBtn.disabled) return;
+      startBtn.disabled = true;
+      startBtn.style.cursor = 'default';
+      startBtn.style.opacity = '0.6';
+      startBtn.textContent = 'Firing taps...';
+      runFiring();
+    });
+
+    // ---- Firing + reports --------------------------------------------------
     function renderRow(pos) {
       var row = document.createElement('div');
       var color = '#888';
@@ -2662,7 +2772,7 @@
         var dy = pos.observed.y - pos.target.py;
         var err = Math.hypot(dx, dy);
         color = err < 5 ? '#3ddc84' : err < 30 ? '#cccc55' : '#d80000';
-        detail = '(' + Math.round(pos.observed.x) + ',' + Math.round(pos.observed.y) + ')  Δ ' + (dx >= 0 ? '+' : '') + Math.round(dx) + ',' + (dy >= 0 ? '+' : '') + Math.round(dy) + '  · ' + err.toFixed(1) + 'px';
+        detail = '(' + Math.round(pos.observed.x) + ',' + Math.round(pos.observed.y) + ') Δ ' + (dx >= 0 ? '+' : '') + Math.round(dx) + ',' + (dy >= 0 ? '+' : '') + Math.round(dy) + ' · ' + err.toFixed(1) + 'px';
       }
       row.style.cssText = 'color:' + color + ';padding:2px 0;font-size:11px';
       row.dataset.label = pos.target.label;
@@ -2671,82 +2781,57 @@
       if (existing) existing.replaceWith(row);
       else resultsList.appendChild(row);
     }
-    pending.forEach(renderRow);
 
-    // Hook into the global SSE handler.
     state.onCalibrationReport = function(data) {
-      if (firedAt < 0) return;  // before any tap fired
+      if (firedAt < 0) return;
       var pos = pending[firedAt];
-      if (!pos || pos.observed) return;  // already captured
+      if (!pos || pos.observed) return;
       pos.observed = { x: data.phoneX, y: data.phoneY };
       renderRow(pos);
     };
 
-    var idx = 0;
-    // Poll the page's ready beacon before firing the first tap. If the page
-    // never loads we abort — firing taps into the user's open app is the
-    // worst possible failure mode.
-    var readyBefore = null;
-    var pollStarted = Date.now();
-    fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
-      readyBefore = d.ready_at || 0;
-      pollReady();
-    });
-    function pollReady() {
-      fetch('/calibrate-target/ready').then(function(r) { return r.json(); }).then(function(d) {
-        if (d.ready_at && d.ready_at !== readyBefore) {
-          status.textContent = 'Page loaded — settling 400ms before firing...';
-          setTimeout(fireNext, 400);
+    function runFiring() {
+      pending.forEach(renderRow);
+      var idx = 0;
+      function fireNext() {
+        if (idx >= positions.length) {
+          setTimeout(function() {
+            var done = pending.filter(function(p) { return p.observed; });
+            var summary = document.createElement('div');
+            summary.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;text-align:center';
+            if (done.length === 0) {
+              summary.style.color = '#d80000';
+              summary.textContent = '0/' + positions.length + ' reports — phone page lost focus?';
+            } else {
+              var errs = done.map(function(p) { return Math.hypot(p.observed.x - p.target.px, p.observed.y - p.target.py); });
+              var avgErr = errs.reduce(function(s, e) { return s + e; }, 0) / errs.length;
+              var maxErr = errs.reduce(function(m, e) { return e > m ? e : m; }, 0);
+              var verdict = avgErr < 5 ? '✅ accurate' : avgErr < 30 ? '⚠ minor offset' : '❌ misaligned';
+              summary.style.color = avgErr < 5 ? '#3ddc84' : avgErr < 30 ? '#cccc55' : '#d80000';
+              summary.style.fontWeight = 'bold';
+              summary.textContent = done.length + '/' + positions.length + ' · avg ' + avgErr.toFixed(1) + 'px · max ' + maxErr.toFixed(1) + 'px · ' + verdict;
+            }
+            body.appendChild(summary);
+            status.textContent = 'Done';
+            startBtn.textContent = '↻ Run again';
+            startBtn.style.opacity = '1';
+            startBtn.style.cursor = 'pointer';
+            startBtn.disabled = false;
+            startBtn.onclick = function() { teardown(); window.calibrateFullSuite(); };
+          }, 1200);
           return;
         }
-        if (Date.now() - pollStarted > 15000) {
-          status.style.color = '#d80000';
-          status.textContent = 'Page never loaded on phone (15s timeout). NO taps fired. Is Chrome the default browser?';
-          closeBtn.textContent = 'Close';
-          state.onCalibrationReport = null;
-          state.calibratingFull = false;
-          return;
-        }
-        setTimeout(pollReady, 300);
-      }).catch(function() { setTimeout(pollReady, 500); });
-    }
-
-    function fireNext() {
-      if (idx >= positions.length) {
-        // Wait 1.2s for trailing report, then summarize.
-        setTimeout(function() {
-          var done = pending.filter(function(p) { return p.observed; });
-          var summary = document.createElement('div');
-          summary.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px';
-          if (done.length === 0) {
-            summary.style.color = '#d80000';
-            summary.textContent = '0/' + positions.length + ' reports received — did the page open?';
-          } else {
-            var errs = done.map(function(p) { return Math.hypot(p.observed.x - p.target.px, p.observed.y - p.target.py); });
-            var avgErr = errs.reduce(function(s, e) { return s + e; }, 0) / errs.length;
-            var maxErr = errs.reduce(function(m, e) { return e > m ? e : m; }, 0);
-            var verdict = avgErr < 5 ? '✅ accurate' : avgErr < 30 ? '⚠ minor offset' : '❌ misaligned';
-            summary.style.color = avgErr < 5 ? '#3ddc84' : avgErr < 30 ? '#cccc55' : '#d80000';
-            summary.style.fontWeight = 'bold';
-            summary.textContent = done.length + '/' + positions.length + ' · avg ' + avgErr.toFixed(1) + 'px · max ' + maxErr.toFixed(1) + 'px · ' + verdict;
-          }
-          overlay.insertBefore(summary, btnRow);
-          status.textContent = 'Done';
-          closeBtn.textContent = 'Close';
-          state.onCalibrationReport = null;
-          state.calibratingFull = false;
-        }, 1200);
-        return;
+        var p = positions[idx];
+        status.textContent = 'Tap ' + (idx + 1) + '/' + positions.length + ' → (' + p.px + ',' + p.py + ')';
+        firedAt = idx;
+        idx++;
+        fetch('/android/tap', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ x: p.px, y: p.py, source: 'human' }),
+        }).catch(function() {});
+        setTimeout(fireNext, 800);
       }
-      var p = positions[idx];
-      status.textContent = 'Firing tap ' + (idx + 1) + '/' + positions.length + ' at (' + p.px + ',' + p.py + ')';
-      firedAt = idx;
-      idx++;
-      fetch('/android/tap', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ x: p.px, y: p.py, source: 'human' }),
-      }).catch(function() {});
-      setTimeout(fireNext, 800);
+      fireNext();
     }
   }
 
