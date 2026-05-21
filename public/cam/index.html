@@ -1932,6 +1932,20 @@
     var stepCount = (w.steps && w.steps.length) || 0;
     meta.textContent = (w.package || '—') + ' · ' + stepCount + ' steps · used ' + (w.use_count || 0) + '×';
     row.appendChild(meta);
+    if (w.flagged) {
+      var badge = document.createElement('span');
+      badge.textContent = ' ⚠';
+      badge.title = w.flag_reason || 'Flagged for review';
+      badge.style.cssText = 'color:#cccc55;font-weight:bold;margin-left:4px;cursor:help';
+      badge.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        if (confirm('Unflag "' + w.name + '"? (Use after verifying the flow works correctly again.)')) {
+          fetch('/workflows/' + encodeURIComponent(w.id) + '/unflag', { method: 'POST' })
+            .then(function() { renderTeachLanding(); });
+        }
+      });
+      meta.appendChild(badge);
+    }
     return row;
   }
 
@@ -2074,11 +2088,137 @@
   }
 
   function renderProposedEditRow(w) {
-    // Filled out in Task 8.
     var row = document.createElement('div');
-    row.style.cssText = 'background:#0a0a0a;border-left:3px solid #ff9933;padding:8px;margin-bottom:6px;font-size:12px;color:#ff9933';
-    row.textContent = '(edit pending) ' + w.name;
+    row.className = 'teach-workflow-row';
+    row.style.cssText = 'background:#0a0a0a;border:1px solid #2a2a2a;border-left:3px solid #ff9933;border-radius:4px;padding:8px;margin-bottom:6px;display:flex;align-items:center;gap:6px';
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;cursor:pointer';
+    info.addEventListener('click', function() { openProposedEditDiff(w); });
+    var name = document.createElement('div');
+    name.style.cssText = 'font-size:12px;color:#ff9933;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    name.textContent = '🟠 ' + w.name;
+    info.appendChild(name);
+    var meta = document.createElement('div');
+    meta.style.cssText = 'font-size:10px;color:#888;margin-top:2px';
+    var stepCount = (w.steps && w.steps.length) || 0;
+    meta.textContent = stepCount + ' steps · ' + (w.edit_reason || 'no reason given');
+    info.appendChild(meta);
+    row.appendChild(info);
+
+    var approveBtn = document.createElement('button');
+    approveBtn.className = 'nav-btn';
+    approveBtn.style.cssText = 'background:#0a3a18;color:#3ddc84;border:1px solid #3ddc84;padding:2px 6px;font-size:10px;cursor:pointer';
+    approveBtn.textContent = '✓';
+    approveBtn.title = 'Approve edit — merges into parent';
+    approveBtn.addEventListener('click', function(e) { e.stopPropagation(); approveEdit(w); });
+    row.appendChild(approveBtn);
+
+    var rejectBtn = document.createElement('button');
+    rejectBtn.className = 'nav-btn';
+    rejectBtn.style.cssText = 'background:#3a1818;color:#ff6666;border:1px solid #d80000;padding:2px 6px;font-size:10px;cursor:pointer';
+    rejectBtn.textContent = '✕';
+    rejectBtn.title = 'Reject edit — discards the proposal, parent untouched';
+    rejectBtn.addEventListener('click', function(e) { e.stopPropagation(); rejectEdit(w); });
+    row.appendChild(rejectBtn);
     return row;
+  }
+
+  function approveEdit(w) {
+    fetch('/workflows/' + encodeURIComponent(w.id) + '/status', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Approve edit failed: ' + d.error); return; }
+      renderTeachLanding();
+    }).catch(function(err) { console.warn('approve edit failed', err); });
+  }
+
+  function rejectEdit(w) {
+    if (!confirm('Reject this edit? The original flow stays untouched.')) return;
+    fetch('/workflows/' + encodeURIComponent(w.id) + '/status', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'rejected' }),
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) { alert('Reject edit failed: ' + d.error); return; }
+      renderTeachLanding();
+    }).catch(function(err) { console.warn('reject edit failed', err); });
+  }
+
+  function openProposedEditDiff(editWf) {
+    fetch('/workflows').then(function(r) { return r.json(); }).then(function(all) {
+      var parent = all.find(function(w) { return w.id === editWf.parent; });
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:130;display:flex;align-items:center;justify-content:center;padding:20px';
+      var panel = document.createElement('div');
+      panel.style.cssText = 'background:#0a0a0a;border:2px solid #ff9933;border-radius:6px;padding:18px;max-width:560px;width:100%;max-height:80vh;overflow:auto;color:#fff;font-family:monospace;font-size:12px';
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'color:#ff9933;font-weight:bold;font-size:14px;margin-bottom:6px';
+      hdr.textContent = '🟠 Proposed edit: ' + editWf.name;
+      panel.appendChild(hdr);
+      if (parent) {
+        var sub = document.createElement('div');
+        sub.style.cssText = 'color:#888;font-size:11px;margin-bottom:8px';
+        sub.textContent = 'Parent: ' + parent.name + ' (' + parent.id + ')';
+        panel.appendChild(sub);
+      }
+      if (editWf.edit_reason) {
+        var reason = document.createElement('div');
+        reason.style.cssText = 'background:#1a1a1a;border-left:3px solid #ff9933;padding:6px 10px;margin-bottom:10px;font-size:11px';
+        reason.textContent = 'Reason: ' + editWf.edit_reason;
+        panel.appendChild(reason);
+      }
+      var diff = document.createElement('div');
+      diff.style.cssText = 'margin:10px 0';
+      var pSteps = (parent && parent.steps) || [];
+      var eSteps = editWf.steps || [];
+      var maxLen = Math.max(pSteps.length, eSteps.length);
+      for (var i = 0; i < maxLen; i++) {
+        var ps = pSteps[i], es = eSteps[i];
+        var line = document.createElement('div');
+        line.style.cssText = 'padding:2px 0;font-size:11px';
+        var label = 'Step ' + (i + 1) + '  ';
+        if (!ps && es) { line.style.color = '#3ddc84'; line.textContent = label + '+ ' + describeStep(es) + '  (NEW)'; }
+        else if (ps && !es) { line.style.color = '#d80000'; line.textContent = label + '- ' + describeStep(ps) + '  (REMOVED)'; }
+        else if (JSON.stringify(ps.args) !== JSON.stringify(es.args) || ps.action !== es.action) {
+          line.style.color = '#cccc55';
+          line.textContent = label + '~ ' + describeStep(ps) + '  →  ' + describeStep(es) + '  (CHANGED)';
+        } else {
+          line.style.color = '#666';
+          line.textContent = label + '  ' + describeStep(ps);
+        }
+        diff.appendChild(line);
+      }
+      panel.appendChild(diff);
+      var btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:8px;margin-top:14px';
+      var ok = document.createElement('button');
+      ok.style.cssText = 'flex:1;padding:8px;background:#0a3a18;color:#3ddc84;border:1px solid #3ddc84;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:bold';
+      ok.textContent = '✓ Approve edit';
+      ok.addEventListener('click', function() { overlay.remove(); approveEdit(editWf); });
+      btnRow.appendChild(ok);
+      var no = document.createElement('button');
+      no.style.cssText = 'flex:1;padding:8px;background:#3a1818;color:#ff6666;border:1px solid #d80000;border-radius:3px;cursor:pointer;font-family:inherit;font-weight:bold';
+      no.textContent = '✕ Reject';
+      no.addEventListener('click', function() { overlay.remove(); rejectEdit(editWf); });
+      btnRow.appendChild(no);
+      var cancel = document.createElement('button');
+      cancel.style.cssText = 'flex:1;padding:8px;background:transparent;color:#888;border:1px solid #444;border-radius:3px;cursor:pointer;font-family:inherit';
+      cancel.textContent = 'Close';
+      cancel.addEventListener('click', function() { overlay.remove(); });
+      btnRow.appendChild(cancel);
+      panel.appendChild(btnRow);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  function describeStep(s) {
+    if (!s) return '(none)';
+    if (s.action === 'tap' && s.args) return 'tap (' + s.args.x + ', ' + s.args.y + ')';
+    if (s.action === 'swipe' && s.args) return 'swipe (' + s.args.x1 + ',' + s.args.y1 + ') → (' + s.args.x2 + ',' + s.args.y2 + ')';
+    if (s.action === 'key' && s.args) return 'key ' + s.args.keycode;
+    if (s.action === 'type' && s.args) return 'type "' + (s.args.text || '').slice(0, 20) + '"';
+    return s.action;
   }
 
   function renderRejectedRow(w) {
