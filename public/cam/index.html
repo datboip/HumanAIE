@@ -1935,17 +1935,75 @@
     return row;
   }
 
+  // Persistent collapse state (per package, per session).
+  // Note: this is initialized lazily by reads (`!== false` is the open default).
   function buildWorkflowsColumn(workflows) {
+    if (!state.flowsGroupOpen) state.flowsGroupOpen = {};
     var col = document.createElement('div');
+    // Bucket workflows by package; 'Unknown' for empty package.
+    var byPkg = {};
+    workflows.forEach(function(w) {
+      var pkg = w.package || 'Unknown';
+      if (!byPkg[pkg]) byPkg[pkg] = [];
+      byPkg[pkg].push(w);
+    });
+    var pkgs = Object.keys(byPkg).sort();
+    if (pkgs.length === 0) {
+      var empty = document.createElement('div');
+      empty.style.cssText = 'color:#666;font-size:12px;font-style:italic;padding:8px 0';
+      empty.textContent = 'No flows yet — promote a session below.';
+      col.appendChild(empty);
+      return col;
+    }
+    pkgs.forEach(function(pkg) {
+      col.appendChild(buildAppGroup(pkg, byPkg[pkg]));
+    });
+    return col;
+  }
+
+  function buildAppGroup(pkg, workflows) {
     var approved = workflows.filter(function(w) { return w.status === 'approved'; });
     var proposed = workflows.filter(function(w) { return w.status === 'proposed'; });
+    var edits    = workflows.filter(function(w) { return w.status === 'proposed-edit'; });
     var rejected = workflows.filter(function(w) { return w.status === 'rejected'; });
+    var flagged  = approved.filter(function(w) { return w.flagged; });
 
-    col.appendChild(buildSubSection('✅ Approved flows (AI references these on repeat tasks)', approved, renderWorkflowRow, false));
-    col.appendChild(buildSubSection('🟡 Proposed (review)', proposed, renderProposedRow, false));
-    col.appendChild(buildSubSection('🗑 Rejected', rejected, renderRejectedRow, true));  // collapsed by default
+    var grp = document.createElement('div');
+    grp.style.cssText = 'margin-bottom:14px;border:1px solid #2a2a2a;border-radius:4px;overflow:hidden';
 
-    return col;
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'background:#1a1a1a;padding:8px 12px;cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center;font-size:13px';
+    var open = state.flowsGroupOpen[pkg] !== false;  // default open
+    var titleLeft = document.createElement('div');
+    titleLeft.style.cssText = 'font-weight:bold;color:#fff;overflow:hidden;text-overflow:ellipsis';
+    titleLeft.textContent = (open ? '▼ ' : '▶ ') + pkg + '  (' + approved.length + ')';
+    hdr.appendChild(titleLeft);
+    var titleRight = document.createElement('div');
+    titleRight.style.cssText = 'font-size:11px;color:#888;flex-shrink:0;margin-left:8px';
+    var parts = [];
+    if (flagged.length) parts.push('⚠ ' + flagged.length);
+    if (edits.length)   parts.push('🟠 ' + edits.length);
+    if (proposed.length) parts.push('🟡 ' + proposed.length);
+    titleRight.textContent = parts.join(' · ');
+    hdr.appendChild(titleRight);
+    grp.appendChild(hdr);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:8px 10px;background:#0a0a0a;display:' + (open ? 'block' : 'none');
+    if (approved.length)  body.appendChild(buildSubSection('✅ Approved', approved, renderWorkflowRow, false));
+    if (edits.length)     body.appendChild(buildSubSection('🟠 Proposed edits (review)', edits, renderProposedEditRow, false));
+    if (proposed.length)  body.appendChild(buildSubSection('🟡 Proposed (review)', proposed, renderProposedRow, false));
+    if (rejected.length)  body.appendChild(buildSubSection('🗑 Rejected', rejected, renderRejectedRow, true));
+    grp.appendChild(body);
+
+    hdr.addEventListener('click', function() {
+      var nowOpen = body.style.display === 'none';
+      body.style.display = nowOpen ? 'block' : 'none';
+      state.flowsGroupOpen[pkg] = nowOpen;
+      titleLeft.textContent = (nowOpen ? '▼ ' : '▶ ') + pkg + '  (' + approved.length + ')';
+    });
+    return grp;
   }
 
   function buildSubSection(title, items, rowBuilder, collapsedByDefault) {
@@ -2012,6 +2070,14 @@
       rejectWorkflow(w.id);
     });
     row.appendChild(rejectBtn);
+    return row;
+  }
+
+  function renderProposedEditRow(w) {
+    // Filled out in Task 8.
+    var row = document.createElement('div');
+    row.style.cssText = 'background:#0a0a0a;border-left:3px solid #ff9933;padding:8px;margin-bottom:6px;font-size:12px;color:#ff9933';
+    row.textContent = '(edit pending) ' + w.name;
     return row;
   }
 
