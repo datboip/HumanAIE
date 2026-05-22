@@ -83,11 +83,28 @@ if (!ADB_AVAILABLE) {
 
   SERIAL_REF.current = detectSerial();
   console.log(`[android] serial: ${SERIAL_REF.current}`);
+
+  // Keep the display on while USB is connected. This is the root-cause
+  // mitigation for the Samsung MediaCodec/screenrecord wedge: the encoder's
+  // virtual display goes silent when the keyguard engages on Android 14+,
+  // and the encoder never recovers without a process-level reset. Forcing
+  // stay-on prevents the trigger entirely. Safe to run on every connect;
+  // setting persists until USB unplug or another `svc power stayon` call.
+  function ensureStayOn() {
+    if (!SERIAL_REF.current) return;
+    try {
+      execFileSync(adbPath, ['-s', SERIAL_REF.current, 'shell', 'svc', 'power', 'stayon', 'usb'],
+                   { timeout: 3000, stdio: ['ignore', 'ignore', 'ignore'] });
+    } catch {}
+  }
+  ensureStayOn();
+
   setInterval(() => {
     const s = detectSerial();
     if (s !== SERIAL_REF.current) {
       console.log(`[android] device switched: ${SERIAL_REF.current} → ${s}`);
       SERIAL_REF.current = s;
+      ensureStayOn();
     }
   }, 5000);
 
@@ -219,20 +236,34 @@ if (!ADB_AVAILABLE) {
       if (!gotFrames) {
         h264FailedStarts++;
         if (h264FailedStarts >= 3) {
-          // After 3 starts with zero frames, this phone+state isn't going to
-          // h264-stream cleanly. Back off for 5 minutes — screencap fallback
-          // serves frames meanwhile. Try again later in case state changed.
-          h264DisabledUntil = Date.now() + 5 * 60 * 1000;
+          // After 3 starts producing only SPS/PPS config bytes (no real frames),
+          // the phone's MediaCodec encoder is wedged — common on Samsung after
+          // a display-off/on cycle. The encoder lives in `mediaserver`, but
+          // killing the screenrecord shell process forces MediaCodec to
+          // destroy its instance and re-allocate fresh on the next start.
+          // This recovers without a phone reboot, typically in <2s.
           h264BackoffCount++;
-          console.log(`[android] h264 producing no frames after 3 tries; backing off 5 min (cycle ${h264BackoffCount}), screencap fallback only`);
+          console.log(`[android] h264 wedged (3 starts produced only config bytes); killing remote screenrecord process and retrying (recovery cycle ${h264BackoffCount})`);
+          try {
+            execFileSync(adbPath, ['-s', SERIAL_REF.current, 'shell', 'pkill', '-f', 'screenrecord'],
+                         { timeout: 3000, stdio: ['ignore', 'ignore', 'ignore'] });
+          } catch {}
+          // Also re-assert stay-on-usb in case keyguard re-engagement triggered this.
+          if (typeof ensureStayOn === 'function') ensureStayOn();
           h264FailedStarts = 0;
-          // Escalation: 3 consecutive backoff cycles (~15 min wedged) means
-          // the phone's MediaCodec is stuck — only a phone reboot recovers.
-          // Mark wedged + broadcast so the cam UI can surface the option.
-          if (h264BackoffCount === 3) {
+          // Brief settle so the kill propagates, then retry. If THIS cycle
+          // also fails (the phone really is stuck), we'll loop here every
+          // ~6s with the pkill — vastly better than the old 5-min backoff
+          // that required a human to reboot the phone.
+          if (h264RestartTimer) return;
+          h264RestartTimer = setTimeout(startH264Stream, 1500);
+          // Flag wedged state for the cam UI banner after several consecutive
+          // recovery attempts (~30s) — gives the human visibility while the
+          // server keeps trying. Clears automatically when frames flow again.
+          if (h264BackoffCount >= 5 && !h264Wedged) {
             h264Wedged = true;
             try { broadcaster('ScreenrecordWedged',
-              `${h264BackoffCount} consecutive backoff cycles (~15 min) — phone reboot likely required`,
+              `${h264BackoffCount} pkill-respawn cycles — phone MediaCodec stuck despite resets`,
               'warn', { wedged: true, cycles: h264BackoffCount }); } catch {}
           }
           return;
@@ -251,9 +282,11 @@ if (!ADB_AVAILABLE) {
     }, 5000);
   }
   startH264Stream();
-  // Backoff retry — every minute, re-arm if the 5-min disable expired.
+  // Safety net — every minute, re-arm if the process died without scheduling
+  // its own restart (shouldn't happen with the pkill-respawn watchdog above
+  // but cheap to keep as belt-and-suspenders).
   setInterval(() => {
-    if (!h264ShellProc && Date.now() >= h264DisabledUntil && !h264RestartTimer) {
+    if (!h264ShellProc && !h264RestartTimer) {
       startH264Stream();
     }
   }, 60 * 1000);
@@ -310,6 +343,7 @@ if (!ADB_AVAILABLE) {
       execFileSync(adbPath, ['connect', PHONE_ADDR], { timeout: 5000 });
       SERIAL_REF.current = detectSerial();
       cachedScreenW = 0; cachedScreenH = 0;
+      ensureStayOn();
       res.json({ ok: true, serial: SERIAL_REF.current });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
