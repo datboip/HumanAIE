@@ -341,7 +341,17 @@ if (!ADB_AVAILABLE) {
           // destroy its instance and re-allocate fresh on the next start.
           // This recovers without a phone reboot, typically in <2s.
           h264BackoffCount++;
-          console.log(`[android] h264 wedged (3 starts produced only config bytes); killing remote screenrecord process and retrying (recovery cycle ${h264BackoffCount})`);
+          // Exponential-ish backoff: 1.5s for the first few cycles (handles
+          // the common case — process-level wedge that pkill recovers from
+          // fast), then back off aggressively for the rare case where the
+          // phone's mediaserver is truly dead and our retries are just
+          // burning phone CPU. Without this, a stuck mediaserver pushes the
+          // phone's load average to 15+ and makes the whole device unusable.
+          let delay;
+          if (h264BackoffCount <= 3) delay = 1500;        // first ~5s: fast retry
+          else if (h264BackoffCount <= 6) delay = 15000;  // ~45s elapsed: slow down
+          else delay = 5 * 60 * 1000;                     // give up retrying for 5 min
+          console.log(`[android] h264 wedged (3 starts produced only config bytes); pkill + retry in ${delay}ms (cycle ${h264BackoffCount})`);
           try {
             execFileSync(adbPath, ['-s', SERIAL_REF.current, 'shell', 'pkill', '-f', 'screenrecord'],
                          { timeout: 3000, stdio: ['ignore', 'ignore', 'ignore'] });
@@ -349,12 +359,8 @@ if (!ADB_AVAILABLE) {
           // Also re-assert stay-on-usb in case keyguard re-engagement triggered this.
           if (typeof ensureStayOn === 'function') ensureStayOn();
           h264FailedStarts = 0;
-          // Brief settle so the kill propagates, then retry. If THIS cycle
-          // also fails (the phone really is stuck), we'll loop here every
-          // ~6s with the pkill — vastly better than the old 5-min backoff
-          // that required a human to reboot the phone.
           if (h264RestartTimer) return;
-          h264RestartTimer = setTimeout(startH264Stream, 1500);
+          h264RestartTimer = setTimeout(startH264Stream, delay);
           // Flag wedged state for the cam UI banner after several consecutive
           // recovery attempts (~30s) — gives the human visibility while the
           // server keeps trying. Clears automatically when frames flow again.
