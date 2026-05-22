@@ -285,9 +285,12 @@ if (!ADB_AVAILABLE) {
     ffmpegProc.stderr.on('data', () => {});
 
     // Fan-out: every h264 chunk from screenrecord goes to ffmpeg (for MJPEG)
-    // AND to WebCodecs clients (raw passthrough).
+    // AND to WebCodecs clients (raw passthrough). NOTE: h264LastFrameAt is
+    // updated ONLY inside ffmpegProc.stdout (where a real JPEG frame is
+    // detected) — NOT here. A wedged screenrecord still emits ~44-byte
+    // config-only chunks periodically; if we reset the watchdog on those,
+    // the stall detector never trips.
     screenrecordProc.stdout.on('data', chunk => {
-      h264LastFrameAt = Date.now();
       if (ffmpegProc && ffmpegProc.stdin.writable) {
         try { ffmpegProc.stdin.write(chunk); } catch {}
       }
