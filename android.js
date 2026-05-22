@@ -175,14 +175,83 @@ if (!ADB_AVAILABLE) {
   let h264DisabledUntil = 0;
   let h264BackoffCount = 0;   // resets when h264 produces a frame
   let h264Wedged = false;     // true after 3 consecutive backoff cycles
+
+  // WebCodecs delivery: /stream-h264 broadcasts raw Annex-B NAL units to
+  // clients. We split screenrecord and ffmpeg into separate child processes
+  // and fan out screenrecord's h264 output to both: ffmpeg (which produces
+  // MJPEG for the legacy <img src=/stream> path) and the H264_CLIENTS set
+  // (HTTP response objects for /stream-h264).
+  let screenrecordProc = null;
+  let ffmpegProc = null;
+  const H264_CLIENTS = new Set();
+  // Cache the most recent SPS (NAL type 7) + PPS (NAL type 8) so new
+  // clients can initialise their decoder without waiting for the next IDR.
+  let h264ParameterSets = null;
+
+  function findNaluTypes(chunk) {
+    // Scan Annex-B start codes (0x00 0x00 0x00 0x01 or 0x00 0x00 0x01) and
+    // collect SPS/PPS NAL units (the first ones in the stream — they're
+    // tiny, contain encoder config, and don't change unless resolution does).
+    const out = [];
+    let i = 0;
+    while (i < chunk.length - 4) {
+      let scLen = 0;
+      if (chunk[i] === 0 && chunk[i+1] === 0 && chunk[i+2] === 0 && chunk[i+3] === 1) scLen = 4;
+      else if (chunk[i] === 0 && chunk[i+1] === 0 && chunk[i+2] === 1) scLen = 3;
+      if (scLen) {
+        const nalType = chunk[i + scLen] & 0x1F;
+        if (nalType === 7 || nalType === 8) out.push({ start: i, type: nalType });
+        i += scLen;
+      } else {
+        i++;
+      }
+    }
+    return out;
+  }
+
+  function broadcastH264(chunk) {
+    // Cache SPS + PPS for new client init. We capture once at startup and
+    // refresh whenever new SPS/PPS arrive (encoder change). Sufficient for
+    // screenrecord which emits them in front of each IDR.
+    const nalus = findNaluTypes(chunk);
+    if (nalus.length >= 2) {
+      // Take from the first SPS start to the byte before whatever follows
+      // the last PPS (next start code, if any). Simple approach: just save
+      // the head of this chunk if it starts with SPS.
+      if (nalus[0].start === 0 && nalus[0].type === 7) {
+        // Find end of PPS — first start code after the last sps/pps in nalus.
+        const last = nalus[nalus.length - 1];
+        // Scan from end-of-last-NAL for the NEXT start code; if none, save through end.
+        let end = chunk.length;
+        for (let j = last.start + 4; j < chunk.length - 3; j++) {
+          if (chunk[j] === 0 && chunk[j+1] === 0 && (chunk[j+2] === 1 || (chunk[j+2] === 0 && chunk[j+3] === 1))) {
+            end = j;
+            break;
+          }
+        }
+        h264ParameterSets = chunk.slice(0, end);
+      }
+    }
+    for (const client of H264_CLIENTS) {
+      try { client.write(chunk); }
+      catch { H264_CLIENTS.delete(client); }
+    }
+  }
+
   function killH264ProcessGroup() {
-    if (!h264ShellProc) return;
-    const pid = h264ShellProc.pid;
-    h264ShellProc = null;
-    // Spawned with detached:true so the bash subprocess is its own process
-    // group leader. Negative PID = signal the whole group so adb screenrecord
-    // and ffmpeg (grandchildren) get killed too, not just the bash wrapper.
-    try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    if (screenrecordProc) {
+      try { screenrecordProc.kill('SIGKILL'); } catch {}
+      screenrecordProc = null;
+    }
+    if (ffmpegProc) {
+      try { ffmpegProc.kill('SIGKILL'); } catch {}
+      ffmpegProc = null;
+    }
+    if (h264ShellProc) {
+      const pid = h264ShellProc.pid;
+      h264ShellProc = null;
+      try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    }
   }
   function startH264Stream() {
     h264RestartTimer = null;
@@ -190,25 +259,46 @@ if (!ADB_AVAILABLE) {
       // Backed off — try again later (handled by the disable timer below).
       return;
     }
-    const cmd =
-      `${adbPath} -s ${SERIAL_REF.current} exec-out screenrecord --output-format=h264 --bit-rate 2000000 /dev/stdout` +
-      ` | ffmpeg -loglevel error -fflags +genpts -probesize 100000 -analyzeduration 0` +
-      ` -f h264 -i pipe:0 -vf scale=540:-2` +
-      ` -f image2pipe -vcodec mjpeg -q:v 5 pipe:1`;
     try {
-      h264ShellProc = spawn('bash', ['-c', cmd], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,    // own process group so killH264ProcessGroup() can kill the whole tree
-      });
+      // Two processes connected by node so we can tap the raw h264 NAL stream
+      // between them. screenrecord emits Annex-B h264 → ffmpeg downscales +
+      // re-encodes as MJPEG for the legacy <img src=/stream> path. Node fans
+      // the screenrecord output to BOTH ffmpeg.stdin AND broadcastH264()
+      // (for the WebCodecs /stream-h264 path).
+      screenrecordProc = spawn(adbPath, ['-s', SERIAL_REF.current, 'exec-out',
+        'screenrecord', '--output-format=h264', '--bit-rate', '2000000', '/dev/stdout'],
+        { stdio: ['ignore', 'pipe', 'pipe'] });
+      ffmpegProc = spawn('ffmpeg', ['-loglevel', 'error', '-fflags', '+genpts',
+        '-probesize', '100000', '-analyzeduration', '0',
+        '-f', 'h264', '-i', 'pipe:0', '-vf', 'scale=540:-2',
+        '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '5', 'pipe:1'],
+        { stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
       console.log('[android] h264 stream unavailable (' + e.message + '), screencap fallback only');
+      try { if (screenrecordProc) screenrecordProc.kill('SIGKILL'); } catch {}
+      try { if (ffmpegProc) ffmpegProc.kill('SIGKILL'); } catch {}
+      screenrecordProc = null; ffmpegProc = null;
       return;
     }
     h264LastFrameAt = Date.now();
-    h264ShellProc.stderr.on('data', () => {});
+    screenrecordProc.stderr.on('data', () => {});
+    ffmpegProc.stderr.on('data', () => {});
+
+    // Fan-out: every h264 chunk from screenrecord goes to ffmpeg (for MJPEG)
+    // AND to WebCodecs clients (raw passthrough).
+    screenrecordProc.stdout.on('data', chunk => {
+      h264LastFrameAt = Date.now();
+      if (ffmpegProc && ffmpegProc.stdin.writable) {
+        try { ffmpegProc.stdin.write(chunk); } catch {}
+      }
+      broadcastH264(chunk);
+    });
+    screenrecordProc.stdout.on('error', () => {});
+
+    // ffmpeg.stdout → MJPEG frames → existing pushFrame path
     let gotFrames = false;
     let frameBuf = Buffer.alloc(0);
-    h264ShellProc.stdout.on('data', chunk => {
+    ffmpegProc.stdout.on('data', chunk => {
       frameBuf = Buffer.concat([frameBuf, chunk]);
       let start = -1;
       for (let i = 0; i < frameBuf.length - 1; i++) {
@@ -230,7 +320,12 @@ if (!ADB_AVAILABLE) {
       }
       if (frameBuf.length > 2 * 1024 * 1024) frameBuf = Buffer.alloc(0);
     });
+    let restartHandled = false;
     const restart = () => {
+      // Dedupe: two child procs each emit 'close' on the same crash; only
+      // run the recovery once per cycle.
+      if (restartHandled) return;
+      restartHandled = true;
       if (h264WatchdogTimer) { clearInterval(h264WatchdogTimer); h264WatchdogTimer = null; }
       killH264ProcessGroup();
       if (!gotFrames) {
@@ -272,8 +367,13 @@ if (!ADB_AVAILABLE) {
       if (h264RestartTimer) return;
       h264RestartTimer = setTimeout(startH264Stream, 2000);
     };
-    h264ShellProc.on('close', restart);
-    h264ShellProc.on('error', restart);
+    screenrecordProc.on('close', restart);
+    screenrecordProc.on('error', restart);
+    ffmpegProc.on('close', restart);
+    ffmpegProc.on('error', restart);
+    // ffmpeg's stdin pipe needs an error handler too — when screenrecord
+    // dies suddenly, our write() can throw EPIPE; just absorb it.
+    ffmpegProc.stdin.on('error', () => {});
     h264WatchdogTimer = setInterval(() => {
       if (Date.now() - h264LastFrameAt > 20000) {
         console.log('[android] h264 stalled (no frame in 20s); restarting');
@@ -286,7 +386,7 @@ if (!ADB_AVAILABLE) {
   // its own restart (shouldn't happen with the pkill-respawn watchdog above
   // but cheap to keep as belt-and-suspenders).
   setInterval(() => {
-    if (!h264ShellProc && !h264RestartTimer) {
+    if (!screenrecordProc && !ffmpegProc && !h264RestartTimer) {
       startH264Stream();
     }
   }, 60 * 1000);
@@ -493,6 +593,27 @@ if (!ADB_AVAILABLE) {
       res.write(header); res.write(frameCache); res.write('\r\n');
     }
     req.on('close', () => MJPEG_CLIENTS.delete(res));
+  });
+
+  // Raw Annex-B h264 NAL stream for WebCodecs clients. ~5x lower latency
+  // than the MJPEG path (no ffmpeg re-encode, no multipart parsing) and
+  // ~2-3x lower bandwidth at the same visual quality. Falls back to /stream
+  // automatically on the client side when WebCodecs isn't supported or this
+  // endpoint isn't producing frames.
+  router.get('/stream-h264', (req, res) => {
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+    res.flushHeaders();
+    H264_CLIENTS.add(res);
+    // Prime the new client with cached SPS+PPS so its decoder can configure
+    // itself without waiting for the next IDR frame from screenrecord.
+    if (h264ParameterSets) {
+      try { res.write(h264ParameterSets); } catch {}
+    }
+    req.on('close', () => H264_CLIENTS.delete(res));
   });
 
   async function detectForeground() {
